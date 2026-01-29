@@ -21,9 +21,8 @@ import DataTable from "../components/Datatable";
 
 const PAGE_SIZE = 10;
 
-const MyIndividualservices = () => {
-  const [individualServices, setIndividualServices] = useState([]);
-  const [ind, setInd] = useState(1);
+const MyPackages = () => {
+  const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
@@ -38,40 +37,15 @@ const MyIndividualservices = () => {
     }
   });
 
-  // Store last API message for error/empty display
-  const [apiMessage, setApiMessage] = useState("");
   useEffect(() => {
     const fetchPackages = async () => {
       try {
         setLoading(true);
         setError(null);
-        setApiMessage("");
         const companyId = selectedCompany?.CompanyID || selectedCompany?.CompanyId || null;
-        const res = await getOrdersByCompanyId({ companyId, page, limit: PAGE_SIZE, IsIndividual: 1 });
-        if (res && res.message) setApiMessage(res.message);
+        const res = await getOrdersByCompanyId({ companyId, page, limit: PAGE_SIZE, IsIndividual: 0 });
         const data = res.data || res.orders || res;
-        // Flatten all ServiceDetails with ItemName for all orders
-        let services = [];
-        if (Array.isArray(data)) {
-          data.forEach(order => {
-            setInd(order.IsIndividual);
-            if (Array.isArray(order.ServiceDetails)) {
-              order.ServiceDetails.forEach(service => {
-                if (service.ItemName) {
-                  services.push({
-                    ...service,
-                    OrderID: order.OrderID,
-                    PackageName: order.PackageName,
-                    OrderStatus: order.OrderStatus,
-                    CreatedAt: order.CreatedAt,
-                    TotalAmount: order.totalAmount || order.TotalAmount || order.totalAmount,
-                  });
-                }
-              });
-            }
-          });
-        }
-        setIndividualServices(services);
+        setPackages(Array.isArray(data) ? data : []);
         const total = res.total || res.count || (res.meta && res.meta.total) || (Array.isArray(res.data) ? res.total : 0);
         setTotalCount(total || 0);
         setTotalPages(total ? Math.ceil(total / PAGE_SIZE) : 1);
@@ -113,8 +87,8 @@ const MyIndividualservices = () => {
   // Define columns for DataTable
   const columns = [
     { key: "OrderID", header: "Order ID" },
-    { key: "ItemName", header: "Service Name", render: (row) => row.ItemName || row.ServiceName || "Unnamed Service" },
-    { key: "Total", header: "Total Amount", render: (row) => `₹${row.Total || "N/A"}` },
+    { key: "PackageName", header: "Package Name", render: (row) => row.PackageName || row.PackageTitle || "Unnamed Package" },
+    { key: "totalAmount", header: "Total Amount", render: (row) => `₹${row.TotalAmount || row.totalAmount || "N/A"}` },
     { key: "OrderStatus", header: "Status", render: (row) => {
       const label = getOrderStatusLabel(row.OrderStatus);
       let colorClass = "text-gray-700";
@@ -128,7 +102,7 @@ const MyIndividualservices = () => {
     { key: "CreatedAt", header: "Ordered On", render: (row) => row.CreatedAt ? new Date(row.CreatedAt).toLocaleDateString() : "N/A" },
     { key: "action", header: "Action", render: (row) => (
       <button
-        onClick={() => navigate("/dashboard/bizpoleone/orderdetails", { state: { order: row, IsIndividual: ind } })}
+        onClick={() => navigate("/dashboard/bizpoleone/orderdetails", { state: { order: row } })}
         className="px-3 py-2 bg-yellow-500 text-black rounded-full hover:bg-yellow-600 transition"
       >
         View Details
@@ -138,19 +112,17 @@ const MyIndividualservices = () => {
 
   return (
     <div className="container mx-auto py-12 px-4">
-      <h1 className="text-3xl font-semibold mb-2"> Individual Orders</h1>
+      <h1 className="text-3xl font-semibold mb-2"> Package Orders</h1>
       <h6 className="mb-6 text-gray-600">View and manage all your package orders in one place</h6>
 
       {loading ? (
-        <div className="text-center py-20 text-gray-500">Loading individual services...</div>
+        <div className="text-center py-20 text-gray-500">Loading packages...</div>
       ) : error ? (
-        <div className="text-center py-20 text-red-500">{apiMessage || error}</div>
-      ) : !individualServices.length ? (
-        <div className="text-center py-20 text-gray-500">{apiMessage || "No order details found for this company"}</div>
+        <div className="text-center py-20 text-red-500">{error}</div>
       ) : (
         <DataTable
           columns={columns}
-          data={individualServices}
+          data={packages}
           loading={loading}
           error={error}
           page={page}
@@ -163,4 +135,4 @@ const MyIndividualservices = () => {
   );
 };
 
-export default MyIndividualservices;
+export default MyPackages;
