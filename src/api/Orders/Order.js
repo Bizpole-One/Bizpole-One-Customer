@@ -1,5 +1,23 @@
+
+
 import axiosInstance from "../axiosInstance";
 import { getSecureItem } from "../../utils/secureStorage";
+
+
+// 🔹 Fetch orders for a specific companyId (bypassing storage)
+
+
+
+
+
+export const getOrdersByCompanyId = async ({ companyId, limit = 10, page = 1, IsIndividual }) => {
+  if (!companyId) throw new Error("companyId is required");
+  const body = { companyId, limit, page };
+  if (typeof IsIndividual !== "undefined") body.IsIndividual = IsIndividual;
+  const response = await axiosInstance.post(`/order/company`, body);
+  return response.data;
+};
+
 
 // Helper: always get latest selectedCompany.CompanyID from secure storage
 const getCompanyIdFromStorage = () => {

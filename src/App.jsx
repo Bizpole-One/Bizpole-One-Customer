@@ -46,6 +46,9 @@ import Plansandpricing from "./pages/Plansandpricing";
 import ServiceDetails from "./pages/ServiceDetails";
 import MyPackages from "./pages/MyPackages";
 import MyIndividualservices from "./pages/MyIndividualservices";
+import ChatPage from "./pages/ChatPage";
+import Invoiceprofile from "./pages/Invoiceprofile";
+import MyOrderDetails from "./pages/MyOrderDetails";
 import Partners from "./pages/Partners";
 
 function App() {
@@ -116,6 +119,7 @@ function App() {
             <Route path="events" element={<ProfileEvents />} />
             <Route path="files" element={<CustomerFiles />} />
             <Route path="companydetails" element={<CompanyDetails />} />
+            <Route path="invoice" element={<Invoiceprofile />} />
 
           </Route>
 
@@ -130,9 +134,15 @@ function App() {
 
               {/* BizpoleOne Nested Dashboard */}
               <Route path="bizpoleone" element={<BizpoleOneDashboardLayout />}>
+
+
+
+              
                 <Route index element={<BizpoleOne />} /> {/* default inside bizpoleone */}
                 <Route path="package" element={<MyPackages />} />
+                <Route path="orderdetails" element={<MyOrderDetails />} />
                 <Route path="services" element={<BizpoleOneServices />} />
+                <Route path="chat" element={<ChatPage />} />
                 <Route path="orders" element={<BizpoleOneServices />} />
                 <Route path="tasks" element={<BizpoleOneTasks />} />
                 <Route path="pricing" element={<Plansandpricing />} />

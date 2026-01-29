@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Building2, Mail, Phone, MapPin, Globe, FileText, Users, Calendar, CheckCircle, XCircle, Eye, Download, Share2, Edit3 } from "lucide-react";
 import { getCompanyById } from "../api/CompanyApi";
 import { getSecureItem, setSecureItem } from "../utils/secureStorage";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const CompanyDetails = () => {
   const [company, setCompany] = useState(null);
@@ -33,6 +35,8 @@ const CompanyDetails = () => {
         setCompany(data.data);
       } catch (err) {
         setError("Failed to fetch company details");
+        toast.dismiss();
+        toast.error("Failed to fetch company details");
       } finally {
         setLoading(false);
       }
@@ -51,6 +55,7 @@ const CompanyDetails = () => {
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-amber-50 to-yellow-50">
+        <ToastContainer position="top-right" autoClose={3000} />
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-amber-700 text-lg font-medium">Loading company details...</p>
@@ -62,6 +67,7 @@ const CompanyDetails = () => {
   if (error) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-amber-50 to-yellow-50">
+        <ToastContainer position="top-right" autoClose={3000} />
         <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md text-center border border-amber-200">
           <XCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-slate-800 mb-2">Oops! Something went wrong</h3>
@@ -72,6 +78,20 @@ const CompanyDetails = () => {
           >
             Try Again
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Defensive: If no company data, show a message
+  if (!company) {
+    return (
+      <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-amber-50 to-yellow-50">
+        <ToastContainer position="top-right" autoClose={3000} />
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md text-center border border-amber-200">
+          <XCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-slate-800 mb-2">No company data found</h3>
+          <p className="text-slate-600 mb-6">Please check your company selection or try again.</p>
         </div>
       </div>
     );
@@ -103,6 +123,7 @@ const CompanyDetails = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-yellow-50 p-4 sm:p-6 lg:p-8">
+      <ToastContainer position="top-right" autoClose={3000} />
       <div className="max-w-7xl mx-auto">
         {/* Header Section */}
         <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 mb-6 border border-amber-200">
