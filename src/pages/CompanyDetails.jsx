@@ -7,6 +7,8 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { getCompanyDetails } from "../api/CompanyApi";
 import { getSecureItem, setSecureItem } from "../utils/secureStorage";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const CompanyDetails = () => {
   const [company, setCompany] = useState(null);
