@@ -251,6 +251,7 @@ const AssociateReceipts = () => {
                                 <th className="px-4 py-4 text-center">S.No</th>
                                 <th className="px-4 py-4">Payment ID</th>
                                 <th className="px-4 py-4">Quote ID</th>
+                                <th className="px-4 py-4">Order ID</th>
                                 <th className="px-4 py-4">Company Name</th>
                                 <th className="px-4 py-4 text-right">Total Amount</th>
                                 {/* <th className="px-4 py-4 text-right">Gov Fee</th>
@@ -299,6 +300,10 @@ const AssociateReceipts = () => {
 
                                         <td className="px-4 py-4 text-slate-500">
                                             {receipt.QuoteID}
+                                        </td>
+
+                                        <td className="px-4 py-4 text-slate-500 font-medium">
+                                            {receipt.OrderID || "N/A"}
                                         </td>
 
                                         <td className="px-4 py-4">
