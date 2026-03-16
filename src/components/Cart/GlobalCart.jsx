@@ -120,7 +120,7 @@ const GlobalCart = () => {
         toast.error("Quote creation failed. Please try again.");
       }
     } catch (err) {
-      toast.error("Failed to create quote. Please try again.");
+      toast.error("Failed to create quote. Please try again.", err);
     }
   };
   return (

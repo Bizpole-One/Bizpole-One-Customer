@@ -11,7 +11,7 @@ import { setSecureItem, getSecureItem } from "../utils/secureStorage";
 const PlansAndPricing = () => {
   const [activeTab, setActiveTab] = useState("packages");
   const navigate = useNavigate();
-  const [selectedServices, setSelectedServices] = useState([]);
+  // const [selectedServices, setSelectedServices] = useState([]);
 
   const [packages, setPackages] = useState([]);
   const [services, setServices] = useState([]);

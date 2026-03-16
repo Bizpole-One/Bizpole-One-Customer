@@ -114,20 +114,20 @@ const AssociateOrders = () => {
     };
 
 
-    const calculateFees = (services) => {
-        if (!services || !Array.isArray(services)) return { prof: 0, cont: 0, vend: 0, govt: 0, cgst: 0, sgst: 0, igst: 0, gst: 0 };
-        return services.reduce((acc, s) => {
-            acc.prof += Number(s.ProfessionalFee || s.ProfFee || 0);
-            acc.cont += Number(s.ContractorFee || 0);
-            acc.vend += Number(s.VendorFee || 0);
-            acc.govt += Number(s.GovtFee || 0);
-            acc.gst += Number(s.GstAmount || s.GST || 0);
-            acc.cgst += Number(s.CGST || 0);
-            acc.sgst += Number(s.SGST || 0);
-            acc.igst += Number(s.IGST || 0);
-            return acc;
-        }, { prof: 0, cont: 0, vend: 0, govt: 0, cgst: 0, sgst: 0, igst: 0, gst: 0 });
-    };
+    // const calculateFees = (services) => {
+    //     if (!services || !Array.isArray(services)) return { prof: 0, cont: 0, vend: 0, govt: 0, cgst: 0, sgst: 0, igst: 0, gst: 0 };
+    //     return services.reduce((acc, s) => {
+    //         acc.prof += Number(s.ProfessionalFee || s.ProfFee || 0);
+    //         acc.cont += Number(s.ContractorFee || 0);
+    //         acc.vend += Number(s.VendorFee || 0);
+    //         acc.govt += Number(s.GovtFee || 0);
+    //         acc.gst += Number(s.GstAmount || s.GST || 0);
+    //         acc.cgst += Number(s.CGST || 0);
+    //         acc.sgst += Number(s.SGST || 0);
+    //         acc.igst += Number(s.IGST || 0);
+    //         return acc;
+    //     }, { prof: 0, cont: 0, vend: 0, govt: 0, cgst: 0, sgst: 0, igst: 0, gst: 0 });
+    // };
 
     const totalPages = Math.ceil(totalOrders / pageSize);
 

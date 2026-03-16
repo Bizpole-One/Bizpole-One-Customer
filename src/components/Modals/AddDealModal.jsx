@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronDown, Loader2, Eye, Phone, Tag, FileText, CheckCircle, Users, Building2, Search, MapPin, Mail, Globe, Languages, Calendar, Hash, Briefcase } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import locationData from "../../utils/statesAndDistricts.json";
 import DealsApi from "../../api/DealsApi";
 import { getSecureItem } from "../../utils/secureStorage";

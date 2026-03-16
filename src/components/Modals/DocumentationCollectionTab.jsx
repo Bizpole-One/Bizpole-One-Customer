@@ -1,8 +1,7 @@
 import {
     FileStack, Loader2, Download, Eye,
-    CheckCircle2, AlertCircle, FileText,
+    AlertCircle, FileText,
     Calendar, Hash, Type, Link as LinkIcon,
-    XCircle, Clock
 } from 'lucide-react';
 
 const DocumentCollectionTab = ({ responseFields, loading }) => {

@@ -12,87 +12,87 @@ import { serviceFormMapping } from "../api/Services/ServiceDetails";
 import ServiceTaskListing from "../../src/components/associate/ServiceTaskListing";
 import { getSecureItem, removeSecureItem } from "../utils/secureStorage";
 
-const currentTasks = [
-  {
-    id: 1,
-    title: "Create a user flow of social application design",
-    status: "Approved",
-    date: "18 Apr 2021",
-    progress: 60,
-    completed: true,
-  },
-  {
-    id: 2,
-    title: "Create a user flow of social application design",
-    status: "In review",
-    date: "18 Apr 2021",
-    progress: 40,
-    completed: true,
-  },
-  {
-    id: 3,
-    title: "Landing page design for Fintech project of singapore",
-    status: "Not Approved", // <-- changed from 'In review'
-    date: "18 Apr 2021",
-    progress: 80,
-    completed: true,
-  },
-  {
-    id: 4,
-    title: "Interactive prototype for app screens of delannine project",
-    status: "In review",
-    date: "18 Apr 2021",
-    progress: 25,
-    completed: false,
-  },
-  {
-    id: 5,
-    title: "Interactive prototype for app screens of delannine project",
-    status: "Approved",
-    date: "",
-    progress: 90,
-    completed: true,
-  },
-];
+// const currentTasks = [
+//   {
+//     id: 1,
+//     title: "Create a user flow of social application design",
+//     status: "Approved",
+//     date: "18 Apr 2021",
+//     progress: 60,
+//     completed: true,
+//   },
+//   {
+//     id: 2,
+//     title: "Create a user flow of social application design",
+//     status: "In review",
+//     date: "18 Apr 2021",
+//     progress: 40,
+//     completed: true,
+//   },
+//   {
+//     id: 3,
+//     title: "Landing page design for Fintech project of singapore",
+//     status: "Not Approved", // <-- changed from 'In review'
+//     date: "18 Apr 2021",
+//     progress: 80,
+//     completed: true,
+//   },
+//   {
+//     id: 4,
+//     title: "Interactive prototype for app screens of delannine project",
+//     status: "In review",
+//     date: "18 Apr 2021",
+//     progress: 25,
+//     completed: false,
+//   },
+//   {
+//     id: 5,
+//     title: "Interactive prototype for app screens of delannine project",
+//     status: "Approved",
+//     date: "",
+//     progress: 90,
+//     completed: true,
+//   },
+// ];
 
 // Upcoming tasks should only show "Disable" (not started) and have no click functionality
-const upcomingTasks = [
-  {
-    id: 1,
-    title: "Create a user flow of social application design",
-    status: "Disable",
-    date: "18 Apr 2021",
-    progress: 0,
-  },
-  {
-    id: 2,
-    title: "Create a user flow of social application design",
-    status: "Disable",
-    date: "18 Apr 2021",
-    progress: 0,
-  },
-  {
-    id: 3,
-    title: "Landing page design for Fintech project of singapore",
-    status: "Disable",
-    date: "18 Apr 2021",
-    progress: 0,
-  },
-  {
-    id: 4,
-    title: "Interactive prototype for app screens of delannine project",
-    status: "Disable",
-    date: "",
-    progress: 0,
-  },
-  {
-    id: 5,
-    title: "Interactive prototype for app screens of delannine project",
-    status: "Disable",
-    date: "",
-    progress: 0,
-  },
-];
+// const upcomingTasks = [
+//   {
+//     id: 1,
+//     title: "Create a user flow of social application design",
+//     status: "Disable",
+//     date: "18 Apr 2021",
+//     progress: 0,
+//   },
+//   {
+//     id: 2,
+//     title: "Create a user flow of social application design",
+//     status: "Disable",
+//     date: "18 Apr 2021",
+//     progress: 0,
+//   },
+//   {
+//     id: 3,
+//     title: "Landing page design for Fintech project of singapore",
+//     status: "Disable",
+//     date: "18 Apr 2021",
+//     progress: 0,
+//   },
+//   {
+//     id: 4,
+//     title: "Interactive prototype for app screens of delannine project",
+//     status: "Disable",
+//     date: "",
+//     progress: 0,
+//   },
+//   {
+//     id: 5,
+//     title: "Interactive prototype for app screens of delannine project",
+//     status: "Disable",
+//     date: "",
+//     progress: 0,
+//   },
+// ];
 
 export default function ServiceSelection() {
   // State for company services
@@ -103,7 +103,7 @@ export default function ServiceSelection() {
   const [loadingCompanyServices, setLoadingCompanyServices] = useState(false);
   const [companyServicesError, setCompanyServicesError] = useState(null);
   const [responseFields, setResponseFields] = useState([]);
-  const [responseFieldsLoading, setResponseFieldsLoading] = useState(false);
+  // const [responseFieldsLoading, setResponseFieldsLoading] = useState(false);
   useEffect(() => {
     console.log("responseFields:", responseFields);
   }, [responseFields]);
@@ -134,7 +134,7 @@ export default function ServiceSelection() {
   const [verifiedFields, setVerifiedFields] = useState([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("Task");
-  const [statusFilter, setStatusFilter] = useState("All");
+  //  const [statusFilter, setStatusFilter] = useState("All");
 
   const [collectDataTask, setCollectDataTask] = useState(null);
   const [noteTask, setNoteTask] = useState(null);
@@ -273,7 +273,7 @@ export default function ServiceSelection() {
       } catch (error) {
         console.error("Error fetching response fields:", error);
       } finally {
-        setResponseFieldsLoading(false);
+        // setResponseFieldsLoading(false);
       }
     };
     fetchFields();

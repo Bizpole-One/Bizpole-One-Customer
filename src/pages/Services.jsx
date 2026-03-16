@@ -72,7 +72,7 @@ const getCategoryIcon = (name = "") => {
 
 import { getAllStates } from "../api/States";
 
-const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSelectState, stateId, bulkLoading, setShowSigninModal }) => {
+const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSelectState, stateId, setShowSigninModal }) => {
   const features = service.Features || [];
   const categoryName = service.Category?.CategoryName || service.CategoryName;
   return (
@@ -273,7 +273,7 @@ const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSele
                   toast.success("Quote created successfully!");
                   if (typeof navigate === 'function') navigate("/dashboard/bizpoleone");
                 } catch (err) {
-                  toast.error("Failed to create quote. Please try again.");
+                  toast.error("Failed to create quote. Please try again.", err);
                 }
               }}
             >
@@ -352,7 +352,7 @@ const Services = () => {
           if (!merged.some(s => s.ServiceID === svc.ServiceID)) merged.push(svc);
         });
         localStorage.setItem("AllServicesCache", JSON.stringify(merged));
-      } catch { }
+      } catch (err) { console.log(err); }
     };
     if (selectedCategory) {
       ServicesApi.getServicesByCategory(selectedCategory, { page, limit })
@@ -458,17 +458,17 @@ const Services = () => {
 
 
   // Helper to change stateId (reuse modal)
-  const handleChangeState = () => {
-    setShowStateModal(true);
-    setSelectedStateForModal("");
-    if (allStates.length === 0) {
-      setStatesLoading(true);
-      getAllStates()
-        .then((states) => setAllStates(states || []))
-        .catch(() => setAllStates([]))
-        .finally(() => setStatesLoading(false));
-    }
-  };
+  // const handleChangeState = () => {
+  //   setShowStateModal(true);
+  //   setSelectedStateForModal("");
+  //   if (allStates.length === 0) {
+  //     setStatesLoading(true);
+  //     getAllStates()
+  //       .then((states) => setAllStates(states || []))
+  //       .catch(() => setAllStates([]))
+  //       .finally(() => setStatesLoading(false));
+  //   }
+  // };
 
   // Store latest known prices for selected services in localStorage
   useEffect(() => {
@@ -482,7 +482,7 @@ const Services = () => {
           }
         });
         localStorage.setItem("SelectedServicePrices", JSON.stringify(updated));
-      } catch { }
+      } catch (err) { console.log(err); }
     }
   }, [bulkPrices]);
 
@@ -641,7 +641,7 @@ const Services = () => {
                           try {
                             const allSvcs = JSON.parse(localStorage.getItem("AllServicesCache") || "[]");
                             svc = allSvcs.find(s => s.ServiceID === sid);
-                          } catch { }
+                          } catch (err) { console.log(err); }
                         }
                         // Get price from bulkPrices or fallback to localStorage
                         let price = bulkPrices[sid]?.TotalFee;
@@ -781,10 +781,10 @@ const Services = () => {
                           };
 
                           payload.is_manual = 0;
-                          const res = await upsertQuote(payload);
+                          await upsertQuote(payload);
                           navigate("/dashboard/bizpoleone");
                         } catch (err) {
-                          alert("Failed to create quote. Please try again.");
+                          alert("Failed to create quote. Please try again.", err);
                         }
                       }}
                     >

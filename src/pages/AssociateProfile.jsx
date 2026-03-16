@@ -66,7 +66,7 @@ const AssociateProfile = () => {
 
     useEffect(() => {
         fetchUserData();
-    }, []);
+    }, [user.id]);
 
     const handleEditClick = () => {
         setEditFormData({

@@ -3,7 +3,6 @@ import { Search, Filter, Loader2, ChevronLeft, ChevronRight, Download, X } from 
 import { getSecureItem } from '../../utils/secureStorage';
 import { format } from 'date-fns';
 import { listAssociateReceipts, getAssociateReceiptDetails } from '../../api/AssociateApi';
-import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -29,7 +28,7 @@ const AssociateReceipts = () => {
 
             const response = await listAssociateReceipts({
                 isAssociate: true,
-                AssociateID: AssociateID,
+                AssociateID,
                 limit: pageSize,
                 page: currentPage,
                 search: searchTerm,
@@ -48,7 +47,7 @@ const AssociateReceipts = () => {
 
     useEffect(() => {
         fetchReceipts();
-    }, [currentPage, searchTerm]);
+    }, [fetchReceipts]);
 
     const handleSearch = (e) => {
         if (e.key === 'Enter') {
