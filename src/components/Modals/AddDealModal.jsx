@@ -344,7 +344,9 @@ const AddDealModal = ({ isOpen = true, onClose, onSuccess, deal, initialData }) 
                 const r = await fetch(`${API_BASE_URL}/service-category?page=1&limit=100`, { headers: { Authorization: `Bearer ${getSecureItem("partnerToken")}` } });
                 const d = await r.json();
                 if (d.success) setServiceCategories(d.data || []);
-            } catch { }
+            } catch (error) {
+                console.error("Error fetching service categories:", error);
+            }
         };
         if (isOpen) fetch_();
     }, [isOpen]);
@@ -492,7 +494,9 @@ const AddDealModal = ({ isOpen = true, onClose, onSuccess, deal, initialData }) 
                 const r = await fetch(`${API_BASE_URL}/states`);
                 const d = await r.json();
                 if (d.success) setAvailableStates(d.data || []);
-            } catch { }
+            } catch (error) {
+                console.error("Error fetching states:", error);
+            }
         };
         if (isOpen) fetch_();
     }, [isOpen]);
@@ -559,7 +563,9 @@ const AddDealModal = ({ isOpen = true, onClose, onSuccess, deal, initialData }) 
                 const lastName = c.LastName || "";
                 setFormData(prev => ({ ...prev, firstName: firstName, lastName: lastName, mobile: c.Mobile || c.mobile || "", email: c.Email || c.email || "", country: c.Country || c.country || "India", pincode: c.PinCode || c.Pincode || c.pincode || "", state: c.State || c.state || "", district: c.District || c.district || "", preferredLanguage: c.PreferredLanguage || c.preferredLanguage || "", communication: c.communication === 1 || c.communication === true || false }));
             }
-        } catch { }
+        } catch (error) {
+            console.error("Error fetching customer details:", error);
+        }
     };
 
     const handleSelectExistingCompany = async (company) => {

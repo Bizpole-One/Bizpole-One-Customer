@@ -649,7 +649,9 @@ const Services = () => {
                           try {
                             const priceCache = JSON.parse(localStorage.getItem("SelectedServicePrices") || "{}");
                             price = priceCache[sid];
-                          } catch { }
+                          } catch (error) {
+                            console.error("Error fetching services:", error);
+                          }
                         }
                         return (
                           <div key={sid} className="flex justify-between items-center text-xs py-1 border-b border-gray-100 last:border-b-0">
@@ -677,7 +679,9 @@ const Services = () => {
                               try {
                                 const priceCache = JSON.parse(localStorage.getItem("SelectedServicePrices") || "{}");
                                 value = parseFloat(priceCache[sid]) || 0;
-                              } catch { }
+                              } catch (error) {
+                                console.error("Error fetching services:", error);
+                              }
                             }
                             return sum + value;
                           }, 0).toLocaleString('en-IN')
@@ -714,7 +718,9 @@ const Services = () => {
                               try {
                                 const allCache = JSON.parse(localStorage.getItem("AllServicesCache") || "[]");
                                 svc = allCache.find(s => s.ServiceID === sid);
-                              } catch { }
+                              } catch (error) {
+                                console.error("Error fetching services:", error);
+                              }
                             }
                             const price = cart[sid] || {};
                             return {
