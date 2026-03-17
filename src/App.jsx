@@ -42,6 +42,7 @@ import ServiceDetails from "./pages/ServiceDetails";
 import ProductList from "./pages/ProductView/ProductList";
 import Partners from "./pages/Partners";
 
+
 import Plansandpricing from "./pages/Plansandpricing";
 import MyPackages from "./pages/MyPackages";
 import MyIndividualservices from "./pages/MyIndividualservices";
@@ -55,6 +56,8 @@ import BusinessQuizWizard from "./components/Quastions";
 import { getSecureItem, setSecureItem } from "./utils/secureStorage";
 import { CartProvider } from "./context/CartContext";
 import GlobalCart from "./components/Cart/GlobalCart";
+import InvoicePreview from "./pages/InvoicePreview";
+
 
 // Associate Dashboard
 import AssociateLayout from "./pages/AssociateLayout";
@@ -130,7 +133,7 @@ function App() {
 
           {/* Public Routes */}
           <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
+          <Route path="/bizpoleone" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/startbusiness/*" element={<StartYourBusiness />} />
           <Route path="/checking" element={<BusinessPanel />} />
@@ -154,6 +157,9 @@ function App() {
             <Route path="files" element={<CustomerFiles />} />
             <Route path="companydetails" element={<CompanyDetails />} />
             <Route path="invoice" element={<Invoiceprofile />} />
+            <Route path="invoice-preview/:encrypted" element={<InvoicePreview />} />
+
+
           </Route>
 
           <Route path="/existing-companies" element={<ExisitingCompanies />} />

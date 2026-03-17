@@ -67,7 +67,7 @@ const getCategoryIcon = (name = "") => {
   if (lower.includes("compliance")) return "✅";
   if (lower.includes("finance")) return "💰";
   if (lower.includes("trade")) return "🌐";
-  return "📁";
+  return " ";
 };
 
 import { getAllStates } from "../api/States";
@@ -491,7 +491,7 @@ const Services = () => {
   return (
     <>
       <SigninModal isOpen={showSigninModal} onClose={() => setShowSigninModal(false)} />
-      <div className="min-h-screen mt-20 bg-gray-50">
+      <div className="min-h-screen mt-20  bg-gradient-to-t from-white to-yellow-50">
       {/* State selection modal */}
       {showStateModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -544,12 +544,12 @@ const Services = () => {
         </div>
       )}
       {/* Page Header */}
-      <div className=" border-b border-gray-100">
-        <div className="max-w-7xl mt-26 mb-18 mx-auto px-6 py-10 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 text-[#c9a700] text-xs font-semibold rounded-full mb-4 border border-amber-100">
-            <IconStar /> Explore Our Services
+      <div className=" bg-gradient-to-b from-white to-yellow-50">
+        <div className="max-w-7xl mt-26 mb-18 mx-auto px-6 py-10 text-center  bg-gradient-to-b from-white to-yellow-50 ">
+          <div className="inline-block px-4 py-1 mb-12 border border-yellow-400 rounded-full text-sm text-yellow-500">
+         Explore Our Services
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold font-black text-gray-900 mb-3">
+          <h1 className="text-4xl md:text-5xl font-semibold font-black text-gray-900 mb-3">
             Choose Your Perfect Service
           </h1>
           <p className="text-gray-500 max-w-lg mx-auto text-sm">
@@ -558,7 +558,7 @@ const Services = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 flex gap-6">
+      <div className="max-w-7xl mx-auto px-6 py-8 flex gap-6 ">
         {/* Sidebar */}
         <motion.aside
           animate={{ width: sidebarOpen ? 240 : 0, opacity: sidebarOpen ? 1 : 0 }}

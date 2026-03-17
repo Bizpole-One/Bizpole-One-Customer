@@ -1,4 +1,5 @@
 import React, { useState, useEffect, createContext } from "react";
+import ConfirmMsg from "../components/ConfirmMsg";
 import { setSecureItem, getSecureItem } from "../utils/secureStorage";
 import { Outlet, NavLink } from "react-router-dom";
 import {
@@ -113,14 +114,9 @@ const DashboardLayout = () => {
 
   const navigate = useNavigate();
 
+  const [showConfirm, setShowConfirm] = useState(false);
   const handleLogout = () => {
-    // Remove token from localStorage
-    localStorage.removeItem("token"); // change "token" if your key is different
-
-    // Optional: clear other user data if stored
-    // localStorage.clear();
-
-    // Redirect to login page
+    localStorage.clear();
     navigate("/");
   };
   // Handle company selection
@@ -485,12 +481,23 @@ const DashboardLayout = () => {
               {isSidebarOpen && <span className="text-sm font-medium">Help</span>}
             </NavLink>
              <button
-      onClick={handleLogout}
+      onClick={() => setShowConfirm(true)}
       className="flex items-center gap-3 py-2 px-3 rounded-lg text-red-500 hover:bg-gray-700 hover:text-red-400"
     >
       <LogOut size={isSidebarOpen ? 24 : 20} />
       {isSidebarOpen && <span className="text-sm font-medium">Logout</span>}
     </button>
+    <ConfirmMsg
+      open={showConfirm}
+      title="Logout"
+      message="Do you want to logout?"
+      confirmText="Logout"
+      cancelText="Cancel"
+      onConfirm={() => { setShowConfirm(false); handleLogout(); }}
+      onCancel={() => setShowConfirm(false)}
+      showCancel={true}
+      variant="delete"
+    />
           </div>
         </div>
 
