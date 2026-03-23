@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import { assignCustomer, createCustomer } from "../api/CustomerApi";
 import { getAllStates } from "../api/States";
-import { setSecureItem, getSecureItem } from "../utils/secureStorage";
+import { setSecureItem } from "../utils/secureStorage";
 
 // ── Brand decorations ─────────────────────────────────────────────────────────
 function FloatingOrb({ style, delay = 0 }) {

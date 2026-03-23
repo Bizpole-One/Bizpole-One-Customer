@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Building2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowLeft } from "lucide-react";
 import { getAllServiceTypes } from "../api/ServiceType";
 
 // ── Floating orb (reuse brand pattern) ───────────────────────────────────────
@@ -46,7 +46,7 @@ const ChooseBusinessType = ({ onBack }) => {
 
   const isSuggested = (typeName) => {
     if (!suggested) return false;
-    let base = suggested.split(/\s*[,/()\-]|\s+or\s+/i).map(s => s.trim()).filter(Boolean);
+    let base = suggested.split(/\s*[,/()]|\s+or\s+/i).map(s => s.trim()).filter(Boolean);
     base.push(suggested);
     base = base.flatMap(s => [
       s, s.replace(/company|firm/gi, "").trim(),

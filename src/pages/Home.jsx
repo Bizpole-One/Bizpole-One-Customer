@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+
 import HeroSection from "../components/HeroSection";
 import FinancialDashboard from "../components/FinancialDashboard";
 import GlobalStats from "../components/GlobalStats";

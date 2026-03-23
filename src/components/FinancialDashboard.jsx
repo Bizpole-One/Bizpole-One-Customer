@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { motion, useScroll, useTransform, useInView, useSpring, AnimatePresence } from "framer-motion";
+import { motion, useScroll, useTransform, useInView, useSpring } from "framer-motion";
 
 // ─── Mock Dashboard Data ──────────────────────────────────────────────────────
 const transactions = [
