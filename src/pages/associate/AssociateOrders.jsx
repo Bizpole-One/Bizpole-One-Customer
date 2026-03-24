@@ -72,8 +72,8 @@ const AssociateOrders = () => {
                 page: currentPage,
                 search: searchTerm,
                 ...(appliedFilters.orderType.length === 1 ? { IsIndividual: appliedFilters.orderType[0] === 'individual' ? 1 : 0 } : {}),
-                ...(appliedFilters.dateFrom ? { fromDate: appliedFilters.dateFrom } : {}),
-                ...(appliedFilters.dateTo ? { toDate: appliedFilters.dateTo } : {}),
+                ...(appliedFilters.dateFrom ? { OrderDateFrom: appliedFilters.dateFrom } : {}),
+                ...(appliedFilters.dateTo ? { OrderDateTo: appliedFilters.dateTo } : {}),
             };
 
             const response = await listOrders(params);
