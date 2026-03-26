@@ -8,7 +8,7 @@ import {
   AnimatePresence,
 } from "framer-motion";
 
-const HowWeWork = () => {
+const Howwework = () => {
   const sectionRef = useRef(null);
   const leftRef = useRef(null);
   const rightRef = useRef(null);
@@ -304,4 +304,4 @@ const HowWeWork = () => {
   );
 };
 
-export default HowWeWork;
+export default Howwework;
