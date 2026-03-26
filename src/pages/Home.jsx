@@ -2,7 +2,7 @@
 import HeroSection from "../components/HeroSection";
 import FinancialDashboard from "../components/FinancialDashboard";
 import GlobalStats from "../components/GlobalStats";
-import HowWeWork from "../components/HowWeWork";
+import Howwework from "./../components/Howwework";
 import ClientsSection from "../components/ClientsSection";
 import CustomerSupport from "../components/CustomerSupport";
 
@@ -12,7 +12,7 @@ export default function Home() {
     <HeroSection />
     <FinancialDashboard />
     <GlobalStats />
-    <HowWeWork />
+    <Howwework />
     <ClientsSection />
     <CustomerSupport />
     </>
