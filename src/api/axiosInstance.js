@@ -9,7 +9,7 @@ const axiosInstance = axios.create({
 
 
 export const api = axios.create({
-  baseURL: "http://localhost:3000", // your backend
+  baseURL: import.meta.env.VITE_API_BASE_URL, // your backend
 });
 
 
