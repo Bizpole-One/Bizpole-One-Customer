@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { loginWithPhone, verifyOtp } from "../../api/AuthApi";
+import { loginWithPhone, signupWithPhone, verifyOtp } from "../../api/AuthApi";
 import { setSecureItem } from "../../utils/secureStorage";
 
 // Add a mode state for switching between sign-in and sign-up
@@ -50,7 +50,11 @@ const SigninModal = ({ isOpen = true, onClose = () => { } }) => {
       }
     }
     try {
-      await loginWithPhone(inputValue);
+      if (mode === "signup") {
+        await signupWithPhone(signupName, signupEmail, inputValue);
+      } else {
+        await loginWithPhone(inputValue);
+      }
       setStep(2);
     } catch (err) {
       alert(err?.message || "Failed to send OTP");
