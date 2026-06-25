@@ -151,9 +151,8 @@ const DashboardLayout = () => {
     if (quote.QuoteID) {
       // Fix: Check if CryptoJS is available before using it
       if (typeof CryptoJS !== 'undefined') {
-        // const encrypted = CryptoJS.AES.encrypt(String(quote.QuoteID), secret).toString();
-        const encrypted = encodeURIComponent(encrypt(quote.QuoteID));
-        const url = `https://dev.bizpoleindia.in/quotes/saved-preview/${encodeURIComponent(encrypted)}`;
+        const encrypted = encrypt(quote.QuoteID);
+        const url = `${import.meta.env.VITE_CLIENT_BASE_URL}/quotes/saved-preview/${encodeURIComponent(encrypted)}`;
         window.open(url, "_blank");
       } else {
         console.error("CryptoJS is not available");
