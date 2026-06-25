@@ -3,7 +3,7 @@ const orderStatusList = [
   { value: 1, label: 'In Progress' },
   { value: 2, label: 'Completed' },
   { value: 3, label: 'Pending' },
-  { value: 4, label: 'Completed, Payment Pending' },
+  { value: 4, label: 'Completed' },
   { value: 5, label: 'Completed, Payment Done' },
 ];
 
@@ -11,7 +11,7 @@ const getOrderStatusLabel = (statusValue) => {
   const found = orderStatusList.find((s) => s.value === statusValue);
   return found ? found.label : 'Unknown';
 };
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getOrdersByCompanyId } from "../api/Orders/Order";
 import { getSecureItem } from "../utils/secureStorage";
@@ -50,34 +50,27 @@ const MyIndividualservices = () => {
         const res = await getOrdersByCompanyId({ companyId, page, limit: PAGE_SIZE, IsIndividual: 1 });
         if (res && res.message) setApiMessage(res.message);
         const data = res.data || res.orders || res;
-        // Flatten all ServiceDetails with ItemName for all orders
-        let services = [];
+        // Group all ServiceDetails under their order as a single row
+        let groupedOrders = [];
         if (Array.isArray(data)) {
           data.forEach(order => {
             setInd(order.IsIndividual);
-            if (Array.isArray(order.ServiceDetails)) {
-              order.ServiceDetails.forEach(service => {
-                if (service.ItemName) {
-                  services.push({
-                    ...service,
-                    OrderID: order.OrderID,
-                    PackageName: order.PackageName,
-                    OrderStatus: order.OrderStatus,
-                    CreatedAt: order.CreatedAt,
-                    TotalAmount: order.totalAmount || order.TotalAmount || order.totalAmount,
-                  });
-                }
+            if (Array.isArray(order.ServiceDetails) && order.ServiceDetails.length > 0) {
+              groupedOrders.push({
+                ...order,
+                ServiceList: order.ServiceDetails,
+                TotalAmount: order.totalAmount || order.TotalAmount || order.totalAmount,
               });
             }
           });
         }
-        setIndividualServices(services);
+        setIndividualServices(groupedOrders);
         const total = res.total || res.count || (res.meta && res.meta.total) || (Array.isArray(res.data) ? res.total : 0);
         setTotalCount(total || 0);
         setTotalPages(total ? Math.ceil(total / PAGE_SIZE) : 1);
       } catch (err) {
         console.error("Error fetching packages:", err);
-        setError("Failed to load your packages.");
+        // setError("Failed to load your packages.");
       } finally {
         setLoading(false);
       }
@@ -92,7 +85,9 @@ const MyIndividualservices = () => {
       try {
         const raw = getSecureItem("selectedCompany") || window.localStorage.getItem("selectedCompany") || window.sessionStorage.getItem("selectedCompany");
         parsed = raw && typeof raw === "string" ? JSON.parse(raw) : raw;
-      } catch {}
+      } catch (err) {
+        console.error("Error parsing selected company:", err);
+      }
       setSelectedCompany(parsed);
       setPage(1);
     };
@@ -110,30 +105,47 @@ const MyIndividualservices = () => {
   };
 
   const navigate = useNavigate();
-  // Define columns for DataTable
+  // Define columns for DataTable (one row per order, services as a list)
   const columns = [
     { key: "OrderID", header: "Order ID" },
-    { key: "ItemName", header: "Service Name", render: (row) => row.ItemName || row.ServiceName || "Unnamed Service" },
-    { key: "Total", header: "Total Amount", render: (row) => `₹${row.Total || "N/A"}` },
-    { key: "OrderStatus", header: "Status", render: (row) => {
-      const label = getOrderStatusLabel(row.OrderStatus);
-      let colorClass = "text-gray-700";
-      if (row.OrderStatus === 1) colorClass = "text-blue-600  bg-blue-200 px-2 py-1 rounded-full";
-      if (row.OrderStatus === 2) colorClass = "text-green-600 bg-green-200 px-2 py-1 rounded-full";
-      if (row.OrderStatus === 3) colorClass = "text-yellow-600 bg-yellow-200 px-2 py-1 rounded-full";
-      if (row.OrderStatus === 4) colorClass = "text-orange-600 bg-orange-200 px-2 py-1 rounded-full";
-      if (row.OrderStatus === 5) colorClass = "text-purple-600 bg-purple-200 px-2 py-1 rounded-full";
-      return <span className={colorClass}>{label}</span>;
-    } },
+    {
+      key: "ServiceList", header: "Services", render: (row) => (
+        <ul className="list-disc pl-4">
+          {Array.isArray(row.ServiceList) && row.ServiceList.length > 0
+            ? row.ServiceList.map((svc, idx) => (
+              <li key={svc.ServiceDetailID || svc.ServiceID || idx} className="mb-1">
+                {svc.ItemName || svc.ServiceName || `Service ${idx + 1}`} <span className="text-xs text-gray-500">₹{svc.Total || 'N/A'}</span>
+              </li>
+            ))
+            : <li className="text-gray-400">No services</li>
+          }
+        </ul>
+      )
+    },
+    { key: "TotalAmount", header: "Total Amount", render: (row) => `₹${row.TotalAmount || "N/A"}` },
+    {
+      key: "OrderStatus", header: "Status", render: (row) => {
+        const label = getOrderStatusLabel(row.OrderStatus);
+        let colorClass = "text-gray-700";
+        if (row.OrderStatus === 1) colorClass = "text-blue-600  bg-blue-200 px-2 py-1 rounded-full";
+        if (row.OrderStatus === 2) colorClass = "text-green-600 bg-green-200 px-2 py-1 rounded-full";
+        if (row.OrderStatus === 3) colorClass = "text-yellow-600 bg-yellow-200 px-2 py-1 rounded-full";
+        if (row.OrderStatus === 4) colorClass = "text-orange-600 bg-orange-200 px-2 py-1 rounded-full";
+        if (row.OrderStatus === 5) colorClass = "text-purple-600 bg-purple-200 px-2 py-1 rounded-full";
+        return <span className={colorClass}>{label}</span>;
+      }
+    },
     { key: "CreatedAt", header: "Ordered On", render: (row) => row.CreatedAt ? new Date(row.CreatedAt).toLocaleDateString() : "N/A" },
-    { key: "action", header: "Action", render: (row) => (
-      <button
-        onClick={() => navigate("/dashboard/bizpoleone/orderdetails", { state: { order: row, IsIndividual: ind } })}
-        className="px-3 py-2 bg-yellow-500 text-black rounded-full hover:bg-yellow-600 transition"
-      >
-        View Details
-      </button>
-    ) },
+    {
+      key: "action", header: "Action", render: (row) => (
+        <button
+          onClick={() => navigate("/dashboard/bizpoleone/orderdetails", { state: { order: row, IsIndividual: ind } })}
+          className="px-3 py-2 bg-yellow-500 text-black rounded-full hover:bg-yellow-600 transition"
+        >
+          View Details
+        </button>
+      )
+    },
   ];
 
   return (
@@ -143,10 +155,10 @@ const MyIndividualservices = () => {
 
       {loading ? (
         <div className="text-center py-20 text-gray-500">Loading individual services...</div>
+      ) : (!individualServices.length && apiMessage === "No order details found for this company") ? (
+        <div className="text-center py-20 text-gray-500">No order details found for this company</div>
       ) : error ? (
         <div className="text-center py-20 text-red-500">{apiMessage || error}</div>
-      ) : !individualServices.length ? (
-        <div className="text-center py-20 text-gray-500">{apiMessage || "No order details found for this company"}</div>
       ) : (
         <DataTable
           columns={columns}

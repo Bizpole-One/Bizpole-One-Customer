@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { data, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { initPayment } from '../api/Orders/Order';
 import { motion } from 'framer-motion';
-import { 
-  Download, 
-  MessageCircle, 
-  Package, 
-  Calendar, 
-  Clock, 
+import {
+  Download,
+  MessageCircle,
+  Calendar,
+  Clock,
   ChevronRight,
   FileText,
   CreditCard,
@@ -34,14 +34,14 @@ const MyOrderDetails = () => {
   // Get order data from navigation state
   const order = location.state?.order || {};
   const IsIndividual = location.state?.IsIndividual || 0;
-  console.log(order,"shuttuuuuuuuuu");
- 
-  
-  
+  console.log(order, "shuttuuuuuuuuu");
+
+
+
   const isIndividualService = IsIndividual === 1; // Check if it's individual service
 
   console.log("Order Data:", order);
-  
+
   // Timeline steps by status value
   const getTimelineSteps = (statusValue) => {
     const steps = [
@@ -51,20 +51,69 @@ const MyOrderDetails = () => {
       { stage: "Payment Pending", key: 4 },
       { stage: "Payment Done", key: 5 },
     ];
-    
+
     let completedIdx = 0;
     if (statusValue === 1) completedIdx = 1; // In Progress
     else if (statusValue === 2) completedIdx = 2; // Completed
     else if (statusValue === 3) completedIdx = 0; // Pending
     else if (statusValue === 4) completedIdx = 3; // Completed, Payment Pending
     else if (statusValue === 5) completedIdx = 4; // Completed, Payment Done
-    
+
     return steps.map((step, idx) => ({
       ...step,
       completed: idx <= completedIdx,
       date: idx <= completedIdx ? new Date(order.CreatedAt || order.CreatedDate).toLocaleDateString() : 'N/A',
     })).slice(0, completedIdx + 1);
   };
+
+
+  const getOrderItems = () => {
+    if (Array.isArray(order.ServiceDetails) && order.ServiceDetails.length > 0) {
+      return order.ServiceDetails.map((service, index) => ({
+        id: index,
+        name: service.ServiceName || service.ItemName || `Service ${index + 1}`,
+        status: service.StatusRemark || 'Pending',
+        price: `₹${service.Total || 'N/A'}`,
+        total: parseFloat(service.Total) || 0,
+        description: service.Description || '',
+        ServiceDetailsID: service.ServiceDetailsID || service.ServiceDetailID || service.ID || null,
+        PendingAmount: service.PendingAmount ? parseFloat(service.PendingAmount) : (service.PendingAmount === 0 ? 0 : (service.Total && service.AdvanceAmount ? parseFloat(service.Total) - parseFloat(service.AdvanceAmount) : 0)),
+        AdvanceAmount: service.AdvanceAmount ? parseFloat(service.AdvanceAmount) : 0
+      }));
+    }
+    // fallback for legacy/other order types
+    if (isIndividualService) {
+      return [{
+        id: 0,
+        name: order.ServiceName || order.ItemName || 'Individual Service',
+        status: order.OrderStatus || order.Status,
+        price: `₹${order.TotalAmount || order.Price || 'N/A'}`,
+        total: order.TotalAmount || order.Price || 0,
+        description: order.ServiceDescription || 'Service details will be provided by our team.',
+        ServiceDetailsID: order.ServiceDetailsID || order.ServiceDetailID || null,
+        PendingAmount: order.PendingAmount ? parseFloat(order.PendingAmount) : 0,
+        AdvanceAmount: order.AdvanceAmount ? parseFloat(order.AdvanceAmount) : 0
+      }];
+    }
+    if (Array.isArray(order.Items) && order.Items.length > 0) {
+      return order.Items.map((item, index) => ({
+        id: index,
+        name: item.name || `Item ${index + 1}`,
+        status: item.status || 'Pending',
+        price: item.price || '₹N/A',
+        total: 0,
+        description: item.description || '',
+        ServiceDetailsID: item.ServiceDetailsID || item.ServiceDetailID || null,
+        PendingAmount: item.PendingAmount ? parseFloat(item.PendingAmount) : 0,
+        AdvanceAmount: item.AdvanceAmount ? parseFloat(item.AdvanceAmount) : 0
+      }));
+    }
+    return [];
+  };
+
+
+  const orderItems = getOrderItems();
+
 
   const timelineSteps = getTimelineSteps(order.OrderStatus || order.Status);
 
@@ -77,7 +126,7 @@ const MyOrderDetails = () => {
   // Status colors mapping
   const statusColors = {
     1: "bg-blue-100 text-blue-800",
-    2: "bg-green-100 text-green-800", 
+    2: "bg-green-100 text-green-800",
     3: "bg-yellow-100 text-yellow-800",
     4: "bg-orange-100 text-orange-800",
     5: "bg-purple-100 text-purple-800",
@@ -117,48 +166,68 @@ const MyOrderDetails = () => {
     }
   };
 
-  // Get appropriate items based on order type
-  const getOrderItems = () => {
-    if (isIndividualService) {
-      // For individual service: Show service details
-      return [{
-        name: order.ServiceName || order.ItemName || 'Individual Service',
-        status: order.OrderStatus || order.Status,
-        price: `₹${order.TotalAmount || order.Price || 'N/A'}`,
-        total: order.TotalAmount || order.Price || 0,
-        description: order.ServiceDescription || 'Service details will be provided by our team.'
-      }];
-    } else {
-      // For package: Show package items from ServiceDetails
-      if (Array.isArray(order.ServiceDetails) && order.ServiceDetails.length > 0) {
-        return order.ServiceDetails.map((service, index) => ({
-          id: index,
-          name: service.ServiceName || service.ItemName || `Service ${index + 1}`,
-          status: service.StatusRemark || 'Pending',
-          price: `₹${service.Total || 'N/A'}`,
-          total: parseFloat(service.Total) || 0,
-          description: service.Description || ''
-        }));
-      }
-      
-      // Fallback to Items array if ServiceDetails not available
-      return (order.Items || []).map((item, index) => ({
-        id: index,
-        name: item.name || `Item ${index + 1}`,
-        status: item.status || 'Pending',
-        price: item.price || '₹N/A',
-        total: 0,
-        description: item.description || ''
+  // State for selected service and its tasks
+  const [selectedService, setSelectedService] = useState(null);
+  const [serviceTasks, setServiceTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError, setTasksError] = useState(null);
+  const [payingOrderId, setPayingOrderId] = useState(null);
+  // Calculate advance and pending amount for display
+  // Sum AdvanceAmount and PendingAmount for all services
+  const totalAdvanceAmount = orderItems.reduce((sum, item) => sum + (item.AdvanceAmount ? Number(item.AdvanceAmount) : 0), 0);
+  const totalPendingAmount = orderItems.reduce((sum, item) => sum + (item.PendingAmount ? Number(item.PendingAmount) : 0), 0);
+
+  // Payment handler
+  const handlePayBalance = async (orderObj) => {
+    try {
+      setPayingOrderId(orderObj.OrderID);
+      const servicePayment = (orderObj.ServiceDetails || []).map((service) => ({
+        serviceId: service.ServiceID || service.serviceId,
+        vendorFee: Number(service.VendorFee || 0),
+        professionalFee: Number(service.ProfessionalFee || service.ProfFee || 0),
+        contractorFee: Number(service.ContractorFee || 0),
+        govFee: Number(service.GovtFee || 0),
+        gst: Number(service.GstAmount || service.GST || 0),
+        pendingAmount: Number(service.PendingAmount || 0)
       }));
+      const totalPending = servicePayment.reduce((sum, s) => sum + Number(s.pendingAmount || 0), 0);
+      const payload = {
+        QuoteID: orderObj.QuoteID,
+        totalAmount: Number(totalPending.toFixed(2)),
+        govFee: Number(orderObj.GovtFee || 0),
+        vendorFee: Number(orderObj.VendorFee || 0),
+        contractorFee: Number(orderObj.ContractorFee || 0),
+        profFee: Number(orderObj.ProfessionalFee || 0),
+        customer: {
+          name: orderObj.CustomerName || "Customer",
+          email: orderObj.CustomerEmail || orderObj.Email || "test@example.com",
+          phone: orderObj.CustomerPhone || orderObj.Phone || "9999999999"
+        },
+        servicePayment,
+        StateID: orderObj.StateID || 0,
+        IsInternal: orderObj.IsInternal || 0
+      };
+      const response = await initPayment(payload);
+      if (response.success && response.paymentUrl) {
+        window.open(response.paymentUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      console.error("Payment Error:", error);
+    } finally {
+      setPayingOrderId(null);
     }
   };
 
-  const orderItems = getOrderItems();
+  // Get all ServiceDetails for both individual and package orders
+
   const totalAmount = orderItems.reduce((sum, item) => sum + (item.total || 0), 0) || order.TotalAmount || order.totalAmount || 0;
+
+  // Check if any service has a pending amount
+  const hasPendingAmount = orderItems.some(item => item.PendingAmount && item.PendingAmount > 0);
 
   if (!order || !order.OrderID) {
     return (
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="min-h-screen flex items-center justify-center p-4"
@@ -179,7 +248,7 @@ const MyOrderDetails = () => {
   }
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="min-h-screen p-4 md:p-8"
@@ -194,7 +263,7 @@ const MyOrderDetails = () => {
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
           </svg>
-          Back 
+          Back
         </motion.button>
 
         {/* Header */}
@@ -210,9 +279,8 @@ const MyOrderDetails = () => {
             <span className="bg-yellow-100 text-yellow-800 text-sm font-medium px-3 py-1.5 rounded-full">
               Order ID: {order.OrderID}
             </span>
-            <span className={`text-sm font-medium px-3 py-1.5 rounded-full ${
-              statusColors[order.OrderStatus || order.Status] || statusColors.default
-            }`}>
+            <span className={`text-sm font-medium px-3 py-1.5 rounded-full ${statusColors[order.OrderStatus || order.Status] || statusColors.default
+              }`}>
               {getOrderStatusLabel(order.OrderStatus || order.Status)}
             </span>
             <span className="text-gray-600 flex items-center text-sm">
@@ -249,19 +317,18 @@ const MyOrderDetails = () => {
                       transition={{ duration: 0.6 }}
                       className="mr-4"
                     >
-                    
+
                     </motion.div>
                     <div>
                       <h2 className="text-2xl font-bold text-gray-900 mb-1">
-                        {isIndividualService 
-                          ? order.ServiceName || order.ItemName || 'Individual Service'
-                          : order.PackageName || order.PackageTitle || 'Package'
-                        }
+                        {order.PackageName || order.PackageTitle || order.ServiceName || order.ItemName || 'Order'}
                       </h2>
                       <p className="text-gray-600">
-                        {isIndividualService 
-                          ? 'Individual service order with dedicated support'
-                          : 'This package includes various business services and solutions tailored to your needs.'
+                        {Array.isArray(order.ServiceDetails) && order.ServiceDetails.length > 0
+                          ? 'This order includes the following individual services.'
+                          : isIndividualService
+                            ? 'Individual service order with dedicated support'
+                            : 'This package includes various business services and solutions tailored to your needs.'
                         }
                       </p>
                     </div>
@@ -283,7 +350,7 @@ const MyOrderDetails = () => {
                       </>
                     )}
                   </h3>
-                  <motion.div 
+                  <motion.div
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
@@ -293,26 +360,28 @@ const MyOrderDetails = () => {
                       <motion.div
                         key={item.id || index}
                         variants={itemVariants}
-                        className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-yellow-50 transition-colors"
+                        className={`flex items-center justify-between p-4 bg-gray-50 rounded-xl transition-colors cursor-pointer hover:bg-yellow-100 border ${selectedService && selectedService.id === item.id ? 'border-yellow-400' : 'border-transparent'}`}
+                        onClick={() => {
+                          if (!item.ServiceDetailsID) return;
+                          navigate('/dashboard/bizpoleone/tasks', { state: { serviceId: item.ServiceDetailsID, service: item } });
+                        }}
                       >
                         <div className="flex-1">
                           <div className="flex items-center mb-1">
-                            <div className={`w-3 h-3 rounded-full mr-4 ${
-                              item.status === 'Completed' ? 'bg-green-400' :
+                            <div className={`w-3 h-3 rounded-full mr-4 ${item.status === 'Completed' ? 'bg-green-400' :
                               item.status === 'Pending' ? 'bg-yellow-400' :
-                              'bg-blue-400'
-                            }`} />
+                                'bg-blue-400'
+                              }`} />
                             <div>
                               <h4 className="font-medium text-gray-900">{item.name}</h4>
                               {item.description && (
                                 <p className="text-sm text-gray-500 mt-1">{item.description}</p>
                               )}
                               {!isIndividualService && item.status && (
-                                <span className={`text-xs px-2 py-1 rounded-full mt-1 inline-block ${
-                                  item.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                                <span className={`text-xs px-2 py-1 rounded-full mt-1 inline-block ${item.status === 'Completed' ? 'bg-green-100 text-green-800' :
                                   item.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-blue-100 text-blue-800'
-                                }`}>
+                                    'bg-blue-100 text-blue-800'
+                                  }`}>
                                   {item.status}
                                 </span>
                               )}
@@ -324,6 +393,40 @@ const MyOrderDetails = () => {
                         </span>
                       </motion.div>
                     ))}
+                    {/* Show tasks for selected service */}
+                    {selectedService && (
+                      <div className="mt-6 bg-white rounded-xl shadow-lg border border-yellow-200 p-6">
+                        <h4 className="text-lg font-bold mb-3 text-yellow-700 flex items-center gap-2">
+                          <ListChecks className="w-5 h-5 text-yellow-400" />
+                          Tasks for {selectedService.name}
+                        </h4>
+                        {tasksLoading ? (
+                          <div className="text-gray-500 py-4">Loading tasks...</div>
+                        ) : tasksError ? (
+                          <div className="text-red-500 py-4">{tasksError}</div>
+                        ) : serviceTasks.length === 0 ? (
+                          <div className="text-gray-400 py-4">No tasks found for this service.</div>
+                        ) : (
+                          <ul className="divide-y divide-gray-100">
+                            {serviceTasks.map((task) => (
+                              <li key={task.ID} className="py-3 flex flex-col md:flex-row md:items-center md:justify-between">
+                                <div>
+                                  <span className="font-semibold text-gray-900">{task.TaskName}</span>
+                                  <span className="ml-2 text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">{task.status}</span>
+                                  <span className="ml-2 text-xs text-gray-400">{task.TaskNature}</span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1 md:mt-0">
+                                  Assigned: {task.AssignedAt ? new Date(task.AssignedAt).toLocaleDateString() : 'N/A'}
+                                  {task.TAT && (
+                                    <span className="ml-2">TAT: {task.TAT} {task.TATMeasure}</span>
+                                  )}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </motion.div>
                 </div>
 
@@ -341,7 +444,7 @@ const MyOrderDetails = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Ordered On</span>
                       <span className="font-semibold">
-                        {order.CreatedAt || order.CreatedDate 
+                        {order.CreatedAt || order.CreatedDate
                           ? new Date(order.CreatedAt || order.CreatedDate).toLocaleDateString()
                           : 'N/A'
                         }
@@ -349,9 +452,8 @@ const MyOrderDetails = () => {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">Status</span>
-                      <span className={`font-semibold px-3 py-1 rounded-full ${
-                        statusColors[order.OrderStatus || order.Status] || statusColors.default
-                      }`}>
+                      <span className={`font-semibold px-3 py-1 rounded-full ${statusColors[order.OrderStatus || order.Status] || statusColors.default
+                        }`}>
                         {getOrderStatusLabel(order.OrderStatus || order.Status)}
                       </span>
                     </div>
@@ -360,6 +462,17 @@ const MyOrderDetails = () => {
                       <span className="text-2xl font-bold text-black">
                         ₹{totalAmount.toLocaleString()}
                       </span>
+                    </div>
+                    {/* Show Advance Paid if any AdvanceAmount exists */}
+                    {totalAdvanceAmount > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Advance Paid</span>
+                        <span className="font-semibold text-green-700">₹{totalAdvanceAmount.toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Pending Amount</span>
+                      <span className="font-semibold text-red-600">₹{totalPendingAmount.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -379,11 +492,11 @@ const MyOrderDetails = () => {
                 <Clock className="w-6 h-6 mr-2 text-yellow-400" />
                 Order Timeline
               </h3>
-              
+
               <div className="relative">
                 <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-yellow-200" />
-                
-                <motion.div 
+
+                <motion.div
                   variants={containerVariants}
                   initial="hidden"
                   animate="visible"
@@ -397,12 +510,11 @@ const MyOrderDetails = () => {
                     >
                       <div className="absolute left-3 -translate-x-1/2">
                         <motion.div
-                          animate={{ 
+                          animate={{
                             scale: step.completed ? [1, 1.2, 1] : 1,
                           }}
-                          className={`w-3 h-3 ml-2 rounded-full border-4 border-white ${
-                            step.completed ? 'bg-gray-900' : 'bg-gray-300'
-                          }`}
+                          className={`w-3 h-3 ml-2 rounded-full border-4 border-white ${step.completed ? 'bg-gray-900' : 'bg-gray-300'
+                            }`}
                         />
                       </div>
                       <div className="ml-12">
@@ -445,7 +557,7 @@ const MyOrderDetails = () => {
               <h3 className="text-lg font-semibold text-gray-900 pb-3 mb-4 border-b border-gray-200">
                 Actions
               </h3>
-              <motion.div 
+              <motion.div
                 className="space-y-4"
                 variants={containerVariants}
                 initial="hidden"
@@ -466,14 +578,27 @@ const MyOrderDetails = () => {
                     <ChevronRight className="w-5 h-5" />
                   </motion.div>
                 </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="w-full flex items-center justify-center gap-2 border-2 border-yellow-400 text-black px-6 py-3 rounded-full font-medium hover:bg-yellow-50 transition-colors"
-                >
-                  <MessageCircle className="w-5 h-5" />
-                  Contact Support
-                </motion.button>
+                {hasPendingAmount ? (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`w-full flex items-center justify-center gap-2 border-2 border-green-500 text-green-700 px-6 py-3 rounded-full font-semibold hover:bg-green-50 transition-colors ${payingOrderId === order.OrderID ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    onClick={() => payingOrderId ? null : handlePayBalance(order)}
+                    disabled={payingOrderId === order.OrderID}
+                  >
+                    <CreditCard className="w-5 h-5 text-green-500" />
+                    {payingOrderId === order.OrderID ? 'Processing...' : 'Pay Balance'}
+                  </motion.button>
+                ) : (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full flex items-center justify-center gap-2 border-2 border-yellow-400 text-black px-6 py-3 rounded-full font-medium hover:bg-yellow-50 transition-colors"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    Contact Support
+                  </motion.button>
+                )}
               </motion.div>
             </motion.div>
           </div>
@@ -518,7 +643,7 @@ const MyOrderDetails = () => {
                   >
                     Cancel
                   </button>
-                  <button 
+                  <button
                     onClick={() => {
                       // Add invoice download logic here
                       alert('Invoice download feature coming soon!');

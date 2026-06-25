@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ChevronDown, Loader2, Search, Building2, Users, Plus, Trash2, CheckCircle, Smartphone, Mail, MapPin, Globe } from "lucide-react";
+import { X, Loader2, Search, Building2, Users, Plus, Trash2, CheckCircle, Smartphone, Mail, Globe } from "lucide-react";
 import locationData from "../../utils/statesAndDistricts.json";
 import DealsApi from "../../api/DealsApi";
 import { getSecureItem } from "../../utils/secureStorage";
@@ -12,7 +12,7 @@ const ExistingEntityDropdown = ({ type, onSelect, onClose, apiUrl }) => {
     const [results, setResults] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const dropdownRef = useRef(null);
-    const searchTimeout = useRef(null);
+
 
     const fetchEntities = useCallback(async (searchQuery) => {
         setIsLoading(true);
@@ -145,7 +145,18 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
     const [activeTab, setActiveTab] = useState("company");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+    const [existingCompany, setExistingCompany] = useState(null);
+    const [existingEmail, setExistingEmail] = useState(null);
+    const [existingMobile, setExistingMobile] = useState(null);
+    const [isCheckingName, setIsCheckingName] = useState(false);
+    const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+    const [isCheckingMobile, setIsCheckingMobile] = useState(false);
+    const [errors, setErrors] = useState({});
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Indian mobile (10 digits, optional +91)
+    const mobileRegex = /^(?:\+91|91)?[6-9]\d{9}$/;
 
     const [companyData, setCompanyData] = useState({
         name: "",
@@ -155,13 +166,15 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
         country: "India",
         state: "",
         district: "",
+        pincode: "",
         preferredLanguage: ""
     });
 
     const [customers, setCustomers] = useState([
         {
             id: Date.now(),
-            name: "",
+            firstName: "",
+            lastName: "",
             mobile: "",
             email: "",
             country: "India",
@@ -186,6 +199,7 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                 country: initialData.Country || "India",
                 state: initialData.State || "",
                 district: initialData.District || initialData.City || "",
+                pincode: initialData.PinCode || "",
                 preferredLanguage: initialData.PreferredLanguage || ""
             });
 
@@ -193,7 +207,8 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                 setCustomers(initialData.Customers.map(c => ({
                     id: c.CustomerID || Date.now() + Math.random(),
                     CustomerID: c.CustomerID,
-                    name: `${c.FirstName || ""} ${c.LastName || ""}`.trim() || c.CustomerName || "",
+                    firstName: c.FirstName || "",
+                    lastName: c.LastName || "",
                     mobile: c.Mobile || "",
                     email: c.Email || "",
                     country: c.Country || "India",
@@ -215,12 +230,14 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                 country: "India",
                 state: "",
                 district: "",
+                pincode: "",
                 preferredLanguage: ""
             });
             setCustomers([
                 {
                     id: Date.now(),
-                    name: "",
+                    firstName: "",
+                    lastName: "",
                     mobile: "",
                     email: "",
                     country: "India",
@@ -236,9 +253,103 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
         }
     }, [isOpen, initialData]);
 
+    useEffect(() => {
+        if (!companyData.name) {
+            setExistingCompany(null);
+            return;
+        }
+
+        const delayDebounce = setTimeout(async () => {
+            setIsCheckingName(true);
+            try {
+                const result = await DealsApi.checkCompanyExistence(companyData.name, companyData.CompanyID);
+                if (result.success && result.exists) {
+                    setExistingCompany(result.company);
+                } else {
+                    setExistingCompany(null);
+                }
+            } catch (err) {
+                console.error("Error checking company existence:", err);
+            } finally {
+                setIsCheckingName(false);
+            }
+        }, 600);
+
+        return () => clearTimeout(delayDebounce);
+    }, [companyData.name, companyData.CompanyID]);
+
+    useEffect(() => {
+        if (!companyData.email) {
+            setExistingEmail(null);
+            return;
+        }
+
+        const delayDebounce = setTimeout(async () => {
+            setIsCheckingEmail(true);
+            try {
+                const result = await DealsApi.checkCompanyEmailExistence(companyData.email, companyData.CompanyID);
+                if (result.success && result.exists) {
+                    setExistingEmail(result.company);
+                } else {
+                    setExistingEmail(null);
+                }
+            } catch (err) {
+                console.error("Error checking company email existence:", err);
+            } finally {
+                setIsCheckingEmail(false);
+            }
+        }, 600);
+
+        return () => clearTimeout(delayDebounce);
+    }, [companyData.email, companyData.CompanyID]);
+
+    useEffect(() => {
+        if (!companyData.mobile) {
+            setExistingMobile(null);
+            return;
+        }
+
+        const delayDebounce = setTimeout(async () => {
+            setIsCheckingMobile(true);
+            try {
+                const result = await DealsApi.checkCompanyMobileExistence(companyData.mobile, companyData.CompanyID);
+                if (result.success && result.exists) {
+                    setExistingMobile(result.company);
+                } else {
+                    setExistingMobile(null);
+                }
+            } catch (err) {
+                console.error("Error checking company mobile existence:", err);
+            } finally {
+                setIsCheckingMobile(false);
+            }
+        }, 600);
+
+        return () => clearTimeout(delayDebounce);
+    }, [companyData.mobile, companyData.CompanyID]);
+
     const handleCompanyChange = (e) => {
         const { name, value } = e.target;
+
         setCompanyData(prev => ({ ...prev, [name]: value }));
+
+        setErrors(prev => {
+            const newErrors = { ...prev };
+
+            if (name === "email") {
+                if (!value) newErrors.email = "Please fill company email address";
+                else if (!emailRegex.test(value)) newErrors.email = "Enter valid email";
+                else delete newErrors.email;
+            }
+
+            if (name === "mobile") {
+                if (!value) newErrors.mobile = "Please fill mobile number";
+                else if (!mobileRegex.test(value)) newErrors.mobile = "Enter valid mobile";
+                else delete newErrors.mobile;
+            }
+
+            return newErrors;
+        });
     };
 
     const handleCustomerChange = (id, field, value) => {
@@ -250,7 +361,8 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
             ...prev,
             {
                 id: Date.now(),
-                name: "",
+                firstName: "",
+                lastName: "",
                 mobile: "",
                 email: "",
                 country: "India",
@@ -295,7 +407,8 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                     const updated = [...prev];
                     updated[0] = {
                         ...updated[0],
-                        name: fullData.CustomerName || `${fullData.FirstName} ${fullData.LastName}` || "",
+                        firstName: fullData.FirstName || "",
+                        lastName: fullData.LastName || "",
                         mobile: fullData.Mobile || "",
                         email: fullData.Email || "",
                         country: fullData.Country || "India",
@@ -321,7 +434,8 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
             const updated = [...prev];
             updated[0] = {
                 ...updated[0],
-                name: "",
+                firstName: "",
+                lastName: "",
                 mobile: "",
                 email: "",
                 country: "India",
@@ -332,13 +446,77 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                 isExisting: false,
                 existingCustomerId: null
             };
-            return updated;
         });
     };
 
-    const handleSubmit = async () => {
+    const handleNextStep = () => {
+        const newErrors = {};
+
         if (!companyData.name) {
-            toast.error("Please fill company name");
+            newErrors.name = "Please fill company name";
+        }
+
+        if (!companyData.mobile) {
+            newErrors.mobile = "Please fill company mobile number";
+        } else if (!mobileRegex.test(companyData.mobile)) {
+            newErrors.mobile = "Enter valid mobile number";
+        }
+
+        if (!companyData.email) {
+            newErrors.email = "Please fill company email address";
+        } else if (!emailRegex.test(companyData.email)) {
+            newErrors.email = "Enter valid email address";
+        }
+
+        if (!companyData.state) {
+            newErrors.state = "Please select state";
+        }
+
+        if (!companyData.district) {
+            newErrors.district = "Please select district";
+        }
+
+        if (existingCompany) newErrors.name = "A company with this name already exists";
+        if (existingEmail) newErrors.email = "This email already exists";
+        if (existingMobile) newErrors.mobile = "This mobile already exists";
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            toast.error("Please fill all required fields correctly");
+            return;
+        }
+
+        setErrors({});
+        setActiveTab("customer");
+    };
+
+    const handleSubmit = async () => {
+        const newErrors = {};
+
+        if (!companyData.name) newErrors.name = "Please fill company name";
+
+        if (!companyData.mobile) {
+            newErrors.mobile = "Please fill company mobile number";
+        } else if (!mobileRegex.test(companyData.mobile)) {
+            newErrors.mobile = "Enter valid mobile number";
+        }
+
+        if (!companyData.email) {
+            newErrors.email = "Please fill company email address";
+        } else if (!emailRegex.test(companyData.email)) {
+            newErrors.email = "Enter valid email address";
+        }
+
+        if (!companyData.state) newErrors.state = "Please select state";
+        if (!companyData.district) newErrors.district = "Please select district";
+
+        if (existingCompany) newErrors.name = "A company with this name already exists";
+        if (existingEmail) newErrors.email = "This email already exists";
+        if (existingMobile) newErrors.mobile = "This mobile already exists";
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            toast.error("Please fix validation errors");
             setActiveTab("company");
             return;
         }
@@ -369,7 +547,7 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                 toast.error(result.message || (companyData.CompanyID ? "Failed to update company" : "Failed to add company"));
             }
         } catch (err) {
-            toast.error("Error connecting to server");
+            toast.error("Error connecting to server", err);
         } finally {
             setIsSubmitting(false);
         }
@@ -410,7 +588,13 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                         {activeTab === "company" && <motion.div layoutId="tabLine" className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-full" />}
                     </button>
                     <button
-                        onClick={() => setActiveTab("customer")}
+                        onClick={() => {
+                            if (activeTab === "company") {
+                                handleNextStep();
+                            } else {
+                                setActiveTab("customer");
+                            }
+                        }}
                         className={`flex items-center gap-2 pb-2 px-1 text-sm font-bold uppercase tracking-wider transition-all relative ${activeTab === "customer" ? "text-indigo-600" : "text-gray-400 hover:text-gray-600"
                             }`}
                     >
@@ -433,7 +617,7 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                             >
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div className="space-y-2 col-span-full">
-                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">Company Name</label>
+                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">Company Name <span className="text-red-500">*</span></label>
                                         <div className="relative">
                                             <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                             <input
@@ -441,10 +625,35 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                                 name="name"
                                                 value={companyData.name}
                                                 onChange={handleCompanyChange}
-                                                className="w-full pl-12 pr-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                                className={`w-full pl-12 pr-4 py-4 bg-white border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition-all ${errors.name ? "border-red-500 focus:ring-red-500/20" :
+                                                    existingCompany ? "border-amber-400 bg-amber-50/10" : "border-gray-200"
+                                                    }`}
                                                 placeholder="Enter company name"
                                             />
+                                            {errors.name && (
+                                                <p className="text-xs text-red-500 mt-1 ml-1 font-medium">{errors.name}</p>
+                                            )}
+                                            {isCheckingName && (
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                                    <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                                                </div>
+                                            )}
                                         </div>
+                                        <AnimatePresence>
+                                            {existingCompany && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0 }}
+                                                    animate={{ opacity: 1, height: "auto" }}
+                                                    exit={{ opacity: 0, height: 0 }}
+                                                    className="overflow-hidden"
+                                                >
+                                                    <p className="text-xs font-medium text-amber-600 flex items-center gap-1.5 mt-2 bg-amber-50 p-2 rounded-lg border border-amber-100">
+                                                        <Search className="w-3 h-3" />
+                                                        A company with this name already exists (ID: {existingCompany.CompanyCode || existingCompany.CompanyID})
+                                                    </p>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
                                     </div>
 
                                     <div className="space-y-2">
@@ -460,7 +669,7 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                     </div>
 
                                     <div className="space-y-2">
-                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">Company Mobile</label>
+                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">Company Mobile <span className="text-red-500">*</span></label>
                                         <div className="relative">
                                             <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                             <input
@@ -468,14 +677,40 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                                 name="mobile"
                                                 value={companyData.mobile}
                                                 onChange={handleCompanyChange}
-                                                className="w-full pl-12 pr-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                                className={`w-full pl-12 pr-4 py-4 bg-white border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition-all ${
+                                                    errors.mobile ? "border-red-500 focus:ring-red-500/20" :
+                                                    existingMobile ? "border-amber-400 bg-amber-50/10" : "border-gray-200"
+                                                }`}
                                                 placeholder="Enter mobile number"
                                             />
+                                            {isCheckingMobile && (
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                                    <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                                                </div>
+                                            )}
+                                            {errors.mobile && (
+                                                <p className="text-xs text-red-500 mt-1 ml-1 font-medium">{errors.mobile}</p>
+                                            )}
+                                            <AnimatePresence>
+                                                {existingMobile && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: "auto" }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        className="overflow-hidden"
+                                                    >
+                                                        <p className="text-xs font-medium text-amber-600 flex items-center gap-1.5 mt-2 bg-amber-50 p-2 rounded-lg border border-amber-100">
+                                                            <Search className="w-3 h-3" />
+                                                            This mobile number already exists for {existingMobile.BusinessName} ({existingMobile.CompanyCode || existingMobile.CompanyID})
+                                                        </p>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
                                     </div>
 
                                     <div className="space-y-2 col-span-full">
-                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">Company Email</label>
+                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">Company Email <span className="text-red-500">*</span></label>
                                         <div className="relative">
                                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                             <input
@@ -483,9 +718,35 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                                 name="email"
                                                 value={companyData.email}
                                                 onChange={handleCompanyChange}
-                                                className="w-full pl-12 pr-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                                className={`w-full pl-12 pr-4 py-4 bg-white border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm transition-all ${
+                                                    errors.email ? "border-red-500 focus:ring-red-500/20" :
+                                                    existingEmail ? "border-amber-400 bg-amber-50/10" : "border-gray-200"
+                                                }`}
                                                 placeholder="Enter email address"
                                             />
+                                            {isCheckingEmail && (
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                                    <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                                                </div>
+                                            )}
+                                            {errors.email && (
+                                                <p className="text-xs text-red-500 mt-1 ml-1 font-medium">{errors.email}</p>
+                                            )}
+                                            <AnimatePresence>
+                                                {existingEmail && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: "auto" }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        className="overflow-hidden"
+                                                    >
+                                                        <p className="text-xs font-medium text-amber-600 flex items-center gap-1.5 mt-2 bg-amber-50 p-2 rounded-lg border border-amber-100">
+                                                            <Search className="w-3 h-3" />
+                                                            This email address already exists for {existingEmail.BusinessName} ({existingEmail.CompanyCode || existingEmail.CompanyID})
+                                                        </p>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
                                     </div>
 
@@ -504,27 +765,32 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                     </div>
 
                                     <div className="space-y-2">
-                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">State</label>
+                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">State <span className="text-red-500">*</span></label>
                                         <select
                                             name="state"
                                             value={companyData.state}
                                             onChange={handleCompanyChange}
-                                            className="w-full px-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm appearance-none"
+                                            className={`w-full px-4 py-4 bg-white border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm appearance-none transition-all ${errors.state ? "border-red-500 focus:ring-red-500/20" : "border-gray-200"
+                                                }`}
                                         >
                                             <option value="">Search or select state</option>
                                             {locationData.states.map(s => (
                                                 <option key={s.stateName} value={s.stateName}>{s.stateName}</option>
                                             ))}
                                         </select>
+                                        {errors.state && (
+                                            <p className="text-xs text-red-500 mt-1 font-medium">{errors.state}</p>
+                                        )}
                                     </div>
 
                                     <div className="space-y-2">
-                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">District</label>
+                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">District <span className="text-red-500">*</span></label>
                                         <select
                                             name="district"
                                             value={companyData.district}
                                             onChange={handleCompanyChange}
-                                            className="w-full px-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm appearance-none"
+                                            className={`w-full px-4 py-4 bg-white border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm appearance-none transition-all ${errors.district ? "border-red-500 focus:ring-red-500/20" : "border-gray-200"
+                                                }`}
                                         >
                                             <option value="">Search or select district</option>
                                             {companyData.state &&
@@ -534,6 +800,21 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                                         <option key={d.districtName} value={d.districtName}>{d.districtName}</option>
                                                     ))}
                                         </select>
+                                        {errors.district && (
+                                            <p className="text-xs text-red-500 mt-1 font-medium">{errors.district}</p>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-gray-500 uppercase tracking-tight">Pin Code</label>
+                                        <input
+                                            type="text"
+                                            name="pincode"
+                                            value={companyData.pincode}
+                                            onChange={handleCompanyChange}
+                                            className="w-full px-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 text-sm"
+                                            placeholder="Enter pin code"
+                                        />
                                     </div>
 
                                     <div className="space-y-2 col-span-full">
@@ -594,7 +875,7 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                     </div>
                                 </div>
 
-                                {customers.map((customer, index) => (
+                                {customers.map((customer) => (
                                     <motion.div
                                         key={customer.id}
                                         layout
@@ -629,15 +910,27 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="space-y-2 col-span-full">
-                                                <label className="text-sm font-semibold text-gray-500">Customer Name</label>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-semibold text-gray-500">First Name</label>
                                                 <input
                                                     type="text"
-                                                    value={customer.name}
-                                                    onChange={(e) => handleCustomerChange(customer.id, "name", e.target.value)}
+                                                    value={customer.firstName}
+                                                    onChange={(e) => handleCustomerChange(customer.id, "firstName", e.target.value)}
                                                     disabled={customer.isExisting}
                                                     className="w-full px-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none text-sm"
-                                                    placeholder="Enter customer name"
+                                                    placeholder="Enter first name"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-semibold text-gray-500">Last Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={customer.lastName}
+                                                    onChange={(e) => handleCustomerChange(customer.id, "lastName", e.target.value)}
+                                                    disabled={customer.isExisting}
+                                                    className="w-full px-4 py-4 bg-white border border-gray-200 rounded-2xl outline-none text-sm"
+                                                    placeholder="Enter last name"
                                                 />
                                             </div>
 
@@ -776,7 +1069,7 @@ const AddCompanyModal = ({ isOpen, onClose, onSuccess, initialData }) => {
                         <button onClick={onClose} className="px-8 py-3 rounded-2xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors">Cancel</button>
                         {activeTab === "company" ? (
                             <button
-                                onClick={() => setActiveTab("customer")}
+                                onClick={handleNextStep}
                                 className="px-10 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all transform active:scale-95"
                             >
                                 Next Step

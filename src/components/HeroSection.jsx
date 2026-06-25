@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import AOS from "aos";
 import "aos/dist/aos.css";
@@ -10,6 +11,7 @@ import { Suspense, lazy } from "react";
 const PaymentLogs = lazy(() => import("./PaymentLogs"));
 
 const HeroSection = () => {
+  const navigate = useNavigate();
   // Animated words for heading
   const words = [
     { text: "Run", color: "text-red-400" },
@@ -32,12 +34,12 @@ const HeroSection = () => {
 
   return (
     <section
-      className="relative bg-cover bg-center min-h-screen flex  flex-col items-center justify-center px-4 sm:px-6 py-12 md:py-16 text-center overflow-hidden"
-      style={{ backgroundImage: "url('/Images/hero-bg.webp')" }}
+      className="relative bg-cover bg-center min-h-screen flex  flex-col items-center justify-center px-4 sm:px-6 py-12 md:py-16 text-center overflow-hidden bg-gradient-to-t from-white to-yellow-50"
+    
     >
       {/* Content */}
       <div className="relative z-10 w-full max-w-6xl mx-auto hero-content">
-        
+
         {/* Animated Heading */}
         <motion.h1
           initial={{ opacity: 0, y: 30 }}
@@ -59,7 +61,7 @@ const HeroSection = () => {
             a Business, Now Simplified !!
           </span>
         </motion.h1>
-        
+
 
         {/* Subheading */}
         <motion.p
@@ -85,6 +87,7 @@ const HeroSection = () => {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="bg-yellow-400 text-black text-xl  px-6 py-3 rounded-full flex items-center gap-2 shadow-md hover:bg-yellow-500 transition w-full sm:w-auto justify-center"
+            onClick={() => navigate("/startbusiness/choose")}
           >
             Get Started  <span className="font-bold">Your Business</span>
             <FaArrowRight />
@@ -95,6 +98,7 @@ const HeroSection = () => {
             initial="initial"
             whileHover="hovered"
             className="flex items-center gap-3 text-black font-medium border-b-2 border-yellow-400 hover:border-b-0 transition cursor-pointer py-2 sm:py-0 justify-center sm:justify-start text-xl"
+            onClick={() => navigate("/existing-companies")}
           >
             {/* Expanding circle effect */}
             <motion.span
@@ -140,15 +144,14 @@ const HeroSection = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8, duration: 0.6 }}
           data-aos="fade-up"
-          className="text-lg sm:text-xl md:text-3xl font-semibold mb-6 md:mb-10 text-black px-4"
+          className="text-lg sm:text-xl md:text-2xl font-semibold mb-4 md:mb-6 text-black px-4"
         >
           More than 25,000 clients
         </motion.h2>
       </div>
 
-      
 
-           <div className="py-6 md:py-12 ">
+           <div className="py-4 md:py-6 ">
              <Suspense fallback={null}>
                <PaymentLogs />
              </Suspense>

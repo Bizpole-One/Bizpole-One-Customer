@@ -1,5 +1,5 @@
 // src/components/ComplianceDashboard.jsx
-import React, { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { DashboardContext } from "../pages/DashboardLayout";
 import ComplianceCalendar from "./ComplianceCalendar";
 import { useNavigate } from "react-router-dom";
@@ -19,6 +19,7 @@ const ComplianceDashboard = () => {
       const raw = getSecureItem("selectedCompany");
       return raw && typeof raw === "string" ? JSON.parse(raw) : raw;
     } catch (e) {
+      console.log(e);
       return null;
     }
   };
@@ -28,9 +29,9 @@ const ComplianceDashboard = () => {
   // Filter quotes for current company
   const companyQuotes = Array.isArray(quotes)
     ? quotes.filter(
-        (q) =>
-          String(q.CompanyID) === String(selectedCompany?.CompanyID || selectedCompany?.CompanyId)
-      )
+      (q) =>
+        String(q.CompanyID) === String(selectedCompany?.CompanyID || selectedCompany?.CompanyId)
+    )
     : [];
 
   const [quoteStatus, setQuoteStatus] = useState(null);
@@ -71,8 +72,8 @@ const ComplianceDashboard = () => {
             (companyQuotes[0].QuoteStatus === "3"
               ? "Paid"
               : companyQuotes[0].QuoteStatus === "1"
-              ? "Draft"
-              : companyQuotes[0].QuoteStatus);
+                ? "Draft"
+                : companyQuotes[0].QuoteStatus);
 
           setQuoteStatus(firstQuoteStatus);
         })
@@ -81,8 +82,8 @@ const ComplianceDashboard = () => {
             companyQuotes[0].QuoteStatus === "3"
               ? "paid"
               : companyQuotes[0].QuoteStatus === "1"
-              ? "Draft"
-              : companyQuotes[0].QuoteStatus;
+                ? "Draft"
+                : companyQuotes[0].QuoteStatus;
           setQuoteStatuses({});
           setQuoteStatus(localStatus);
         })
@@ -96,27 +97,36 @@ const ComplianceDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(companyQuotes), selectedCompany?.CompanyID]);
 
+
+  const encrypt = (id) => {
+    const secret =
+      import.meta.env.VITE_QUOTE_LINK_SECRET ||
+      "q3!9fKs7@pLzXr84$nmYtB!cVZdQ3";
+    return CryptoJS.AES.encrypt(String(id), secret).toString();
+  };
+
   const handleViewDetails = (quote = null) => {
-    const targetQuoteId = quote ? quote.QuoteID : quoteId;0
+    const targetQuoteId = quote ? quote.QuoteID : quoteId; 0
     if (!targetQuoteId) {
       alert("Quote ID not found");
       return;
     }
-    const secret = "q3!9fKs7@pLzXr84$nmYtB!cVZdQ3";
-    const encrypted = CryptoJS.AES.encrypt(String(targetQuoteId), secret).toString();
-    const url = `http://localhost:5174/quotes/saved-preview/${encodeURIComponent(encrypted)}`;
+    const encrypted = encodeURIComponent(encrypt(targetQuoteId));
+    // const encrypted = CryptoJS.AES.encrypt(String(targetQuoteId), secret).toString();
+    const url = `https://dev.bizpoleindia.in/quotes/saved-preview/${encodeURIComponent(encrypted)}`;
     window.open(url, "_blank");
   };
 
-  const handleDownload = (quote = null) => {
-    const targetQuoteId = quote ? quote.QuoteID : quoteId;
-    if (!targetQuoteId) {
-      alert("Quote ID not found");
-      return;
-    }
-    const url = `http://localhost:5174/quotes/download/${targetQuoteId}`;
-    window.open(url, "_blank");
-  };
+
+  // const handleDownload = (quote = null) => {
+  //   const targetQuoteId = quote ? quote.QuoteID : quoteId;
+  //   if (!targetQuoteId) {
+  //     alert("Quote ID not found");
+  //     return;
+  //   }
+  //   const url = `http://localhost:5174/quotes/download/${targetQuoteId}`;
+  //   window.open(url, "_blank");
+  // };
 
   const handleGenerateQuote = () => {
     navigate("/startbusiness/choose", { state: { navigate: true } });
@@ -230,7 +240,7 @@ const ComplianceDashboard = () => {
               {/* Action Buttons */}
               <div className="flex flex-col gap-2 w-full">
                 {companyQuotes.length > 0 && (
-                  <button className="bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold px-5 py-2 rounded-full transition w-full" onClick={() => handleViewDetails(companyQuotes[0])}>
+                  <button className="px-8 py-4 bg-gradient-to-r from-yellow-400 to-yellow-500 text-white rounded-full font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all w-full" onClick={() => handleViewDetails(companyQuotes[0])}>
                     View Latest Quote
                   </button>
                 )}

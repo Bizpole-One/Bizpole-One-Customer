@@ -42,6 +42,7 @@ import ServiceDetails from "./pages/ServiceDetails";
 import ProductList from "./pages/ProductView/ProductList";
 import Partners from "./pages/Partners";
 
+
 import Plansandpricing from "./pages/Plansandpricing";
 import MyPackages from "./pages/MyPackages";
 import MyIndividualservices from "./pages/MyIndividualservices";
@@ -53,6 +54,10 @@ import ExisitingCompanies from "./pages/ExisitingCompanies";
 import BusinessQuizWizard from "./components/Quastions";
 
 import { getSecureItem, setSecureItem } from "./utils/secureStorage";
+import { CartProvider } from "./context/CartContext";
+import GlobalCart from "./components/Cart/GlobalCart";
+import InvoicePreview from "./pages/InvoicePreview";
+
 
 // Associate Dashboard
 import AssociateLayout from "./pages/AssociateLayout";
@@ -61,6 +66,7 @@ import AssociateProfile from "./pages/AssociateProfile";
 import AssociateDeals from "./pages/associate/AssociateDeals";
 import DealDetailView from "./pages/associate/DealDetailView";
 import AssociateQuotes from "./pages/associate/AssociateQuotes";
+import QuoteDetailView from "./pages/associate/QuoteDetailView";
 import AssociateOrders from "./pages/associate/AssociateOrders";
 import OrderDetailView from "./pages/associate/OrderDetailView";
 import AssociateServices from "./pages/associate/AssociateServices";
@@ -112,22 +118,23 @@ function App() {
         setSecureItem("partnerUser", JSON.parse(partnerUser));
       }
     } catch (error) {
-      console.warn("Old user format found, clearing...");
+      console.warn("Old user format found, clearing...", error);
       localStorage.removeItem("user");
       localStorage.removeItem("partnerUser");
     }
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen">
-      {!hideLayout && <Navbar />}
+    <CartProvider>
+      <div className="flex flex-col min-h-screen">
+        {!hideLayout && <Navbar />}
 
-      <main className="flex-grow">
-        <Routes>
+        <main className="flex-grow">
+          <Routes>
 
           {/* Public Routes */}
           <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
+          <Route path="/bizpoleone" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/startbusiness/*" element={<StartYourBusiness />} />
           <Route path="/checking" element={<BusinessPanel />} />
@@ -151,57 +158,64 @@ function App() {
             <Route path="files" element={<CustomerFiles />} />
             <Route path="companydetails" element={<CompanyDetails />} />
             <Route path="invoice" element={<Invoiceprofile />} />
+            <Route path="invoice-preview/:encrypted" element={<InvoicePreview />} />
+
+
           </Route>
 
-          <Route path="/existing-companies" element={<ExisitingCompanies />} />
+            <Route path="/existing-companies" element={<ExisitingCompanies />} />
 
-          {/* Protected Routes */}
-          <Route element={<ProtectedRoute redirectPath="/" />}>
+            {/* Protected Routes */}
+            <Route element={<ProtectedRoute redirectPath="/" />}>
 
-            {/* Main Dashboard */}
-            <Route path="/dashboard" element={<DashboardLayout />}>
-              <Route index element={<DashboardMain />} />
-              <Route path="books" element={<BizpoleBooks />} />
+              {/* Main Dashboard */}
+              <Route path="/dashboard" element={<DashboardLayout />}>
+                <Route index element={<DashboardMain />} />
+                <Route path="books" element={<BizpoleBooks />} />
 
-              <Route path="bizpoleone" element={<BizpoleOneDashboardLayout />}>
-                <Route index element={<BizpoleOne />} />
-                <Route path="package" element={<MyPackages />} />
-                <Route path="orderdetails" element={<MyOrderDetails />} />
-                <Route path="services" element={<BizpoleOneServices />} />
-                <Route path="orders" element={<BizpoleOneServices />} />
-                <Route path="tasks" element={<BizpoleOneTasks />} />
-                <Route path="pricing" element={<Plansandpricing />} />
-                <Route path="individual" element={<MyIndividualservices />} />
-                <Route path="chat" element={<ChatPage />} />
+                <Route path="bizpoleone" element={<BizpoleOneDashboardLayout />}>
+                  <Route index element={<BizpoleOne />} />
+                  <Route path="package" element={<MyPackages />} />
+                  <Route path="orderdetails" element={<MyOrderDetails />} />
+                  <Route path="services" element={<BizpoleOneServices />} />
+                  <Route path="orders" element={<BizpoleOneServices />} />
+                  <Route path="tasks" element={<BizpoleOneTasks />} />
+                  <Route path="pricing" element={<Plansandpricing />} />
+                  <Route path="individual" element={<MyIndividualservices />} />
+                  <Route path="chat" element={<ChatPage />} />
+                </Route>
               </Route>
+
+              {/* Associate Dashboard */}
+              <Route path="/associate" element={<AssociateLayout />}>
+                <Route path="dashboard" element={<AssociateDashboard />} />
+                <Route path="profile" element={<AssociateProfile />} />
+                <Route path="deals" element={<AssociateDeals />} />
+                <Route path="deals/:id" element={<DealDetailView />} />
+                <Route path="quotes" element={<AssociateQuotes />} />
+                <Route path="quotes/:id" element={<QuoteDetailView />} />
+                <Route path="orders" element={<AssociateOrders />} />
+                <Route path="orders/:id" element={<OrderDetailView />} />
+                <Route path="services" element={<AssociateServices />} />
+                <Route path="services/:id" element={<ServiceDetailView />} />
+                <Route path="customers" element={<AssociateCustomers />} />
+                <Route path="customers/:id" element={<CustomerDetailView />} />
+                <Route path="companies" element={<AssociateCompanies />} />
+                <Route path="companies/:id" element={<CompanyDetailView />} />
+                <Route path="receipts" element={<AssociateReceipts />} />
+                <Route path="invoices" element={<AssociateInvoices />} />
+                <Route path="explore-services" element={<ExploreServices />} />
+              </Route>
+
             </Route>
+          </Routes>
+        </main>
 
-            {/* Associate Dashboard */}
-            <Route path="/associate" element={<AssociateLayout />}>
-              <Route path="dashboard" element={<AssociateDashboard />} />
-              <Route path="profile" element={<AssociateProfile />} />
-              <Route path="deals" element={<AssociateDeals />} />
-              <Route path="deals/:id" element={<DealDetailView />} />
-              <Route path="quotes" element={<AssociateQuotes />} />
-              <Route path="orders" element={<AssociateOrders />} />
-              <Route path="orders/:id" element={<OrderDetailView />} />
-              <Route path="services" element={<AssociateServices />} />
-              <Route path="services/:id" element={<ServiceDetailView />} />
-              <Route path="customers" element={<AssociateCustomers />} />
-              <Route path="customers/:id" element={<CustomerDetailView />} />
-              <Route path="companies" element={<AssociateCompanies />} />
-              <Route path="companies/:id" element={<CompanyDetailView />} />
-              <Route path="receipts" element={<AssociateReceipts />} />
-              <Route path="invoices" element={<AssociateInvoices />} />
-              <Route path="explore-services" element={<ExploreServices />} />
-            </Route>
-
-          </Route>
-        </Routes>
-      </main>
-
-      {!hideLayout && <Footer />}
-    </div>
+        {!hideLayout && <Footer />}
+        {/* Global floating cart, always visible */}
+        <GlobalCart />
+      </div>
+    </CartProvider>
   );
 }
 

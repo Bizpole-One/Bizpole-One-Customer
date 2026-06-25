@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import AOS from "aos";
 import "aos/dist/aos.css";
@@ -27,7 +27,6 @@ const tasks = [
 ];
 
 const TodayTask = () => {
-  const [activeTab, setActiveTab] = useState("all");
 
   useEffect(() => {
     AOS.init({ duration: 800, easing: "ease-in-out" });
@@ -35,7 +34,7 @@ const TodayTask = () => {
 
   return (
     <motion.div
-      className="bg-white shadow-md rounded-2xl p-6"
+      className="bg-white shadow-md rounded-2xl p-6 mt-3"
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8 }}
