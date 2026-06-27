@@ -108,7 +108,6 @@ const ComplianceDashboard = () => {
 
   const handleViewDetails = (quote = null) => {
     const targetQuoteId = quote ? quote.QuoteID : quoteId;
-    0;
     if (!targetQuoteId) {
       alert("Quote ID not found");
       return;
@@ -146,7 +145,7 @@ const ComplianceDashboard = () => {
 
   const getQuoteStatusIcon = (status) => {
     switch (status) {
-      case "paid":
+      case "Paid":
         return (
           <svg
             className="w-6 h-6 text-green-500"
@@ -176,7 +175,7 @@ const ComplianceDashboard = () => {
   return (
     <div className="flex flex-col md:flex-row gap-4 md:gap-6 w-full px-2 sm:px-4">
       <div className="flex-1 flex justify-center mb-4 md:mb-0">
-        <ComplianceCalendar value={39.5} />
+        <ComplianceCalendar />
       </div>
 
       <div className="flex-1 flex justify-center items-center">
