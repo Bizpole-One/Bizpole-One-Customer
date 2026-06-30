@@ -21,14 +21,17 @@ const ProfilePage = () => {
   const [message, setMessage] = useState({ type: "", text: "" });
 
   useEffect(() => {
-    const storedUser = getSecureItem("user");
-    console.log(storedUser, "amlstored");
-
-    if (storedUser) {
-      setUser(storedUser);
-      setForm(storedUser);
-    }
-
+    const loadUser = () => {
+      const storedUser = getSecureItem("user");
+      console.log(storedUser, "amlstored");
+      if (storedUser) {
+        setUser(storedUser);
+        setForm(storedUser);
+      }
+    };
+    loadUser();
+    window.addEventListener("company-switched", loadUser);
+    return () => window.removeEventListener("company-switched", loadUser);
   }, []);
 
   const handleChange = (e) => {

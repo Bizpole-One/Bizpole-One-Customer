@@ -1,22 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
 import {
   Building2, Mail, Phone, MapPin, Globe, FileText, Users,
-  CheckCircle, XCircle, ChevronRight, ArrowLeftRight,
+  CheckCircle, XCircle, ChevronRight,
   Shield, Briefcase, Settings
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCompanyDetails } from "../api/CompanyApi";
-import { getSecureItem, setSecureItem } from "../utils/secureStorage";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { ProfileCompanyContext } from "./ProfileLayout";
 
 const CompanyDetails = () => {
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("company");
-  const [companies, setCompanies] = useState([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(getSecureItem("CompanyId") || "");
+  const { selectedCompanyId } = useContext(ProfileCompanyContext);
 
   // Animation variants
   const containerVariants = {
@@ -58,19 +57,6 @@ const CompanyDetails = () => {
     }
   };
 
-  // Get companies from user object in secure storage
-  useEffect(() => {
-    const user = getSecureItem("user");
-    if (user && user.Companies) {
-      setCompanies(user.Companies);
-      if (!selectedCompanyId && user.Companies.length > 0) {
-        const companyId = user.Companies[0].CompanyID.toString();
-        setSelectedCompanyId(companyId);
-        setSecureItem("CompanyId", companyId);
-      }
-    }
-  }, []);
-
   // Fetch company details
   useEffect(() => {
     const fetchCompany = async () => {
@@ -90,14 +76,12 @@ const CompanyDetails = () => {
       }
     };
 
-    if (selectedCompanyId) fetchCompany();
+    if (selectedCompanyId) {
+      fetchCompany();
+    } else {
+      setLoading(false);
+    }
   }, [selectedCompanyId]);
-
-  const handleCompanyChange = (companyId) => {
-    setSelectedCompanyId(companyId);
-    setSecureItem("CompanyId", companyId);
-    setError(null);
-  };
 
   const InfoCard = ({ icon: Icon, label, value, className = "", onClick }) => (
     <motion.div
@@ -266,29 +250,6 @@ const CompanyDetails = () => {
                 </div>
               </div>
 
-              {/* Company Switcher */}
-              {companies.length > 1 && (
-                <motion.div
-                  variants={itemVariants}
-                  className="relative"
-                >
-                  <div className="flex items-center gap-3 bg-white rounded-full p-2 border-2 border-yellow-100 shadow-lg">
-                    <ArrowLeftRight className="w-5 h-5 text-yellow-400 ml-3" />
-                    <select
-                      value={selectedCompanyId}
-                      onChange={(e) => handleCompanyChange(e.target.value)}
-                      className="bg-transparent border-none focus:outline-none focus:ring-0 px-3 py-2 text-gray-900 font-medium cursor-pointer appearance-none"
-                    >
-                      {companies.map((c) => (
-                        <option key={c.CompanyID} value={c.CompanyID}>
-                          {c.BusinessName || `Company #${c.CompanyID}`}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronRight className="w-5 h-5 text-yellow-400 mr-3" />
-                  </div>
-                </motion.div>
-              )}
             </div>
 
             {/* Stats Row */}

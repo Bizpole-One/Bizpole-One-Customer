@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiFileText,
@@ -14,12 +14,13 @@ import {
   FiRefreshCw
 } from 'react-icons/fi';
 import { getCompanyInvoices } from '../api/Companyinvoice';
-import { getSecureItem } from '../utils/secureStorage';
 import CryptoJS from "crypto-js";
+import { ProfileCompanyContext } from './ProfileLayout';
 import { useNavigate } from 'react-router-dom';
 
 const InvoiceProfile = () => {
   const navigate = useNavigate();
+  const { selectedCompanyId } = useContext(ProfileCompanyContext);
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedFaq, setExpandedFaq] = useState(null);
   const [invoices, setInvoices] = useState([]);
@@ -56,26 +57,25 @@ const InvoiceProfile = () => {
     }
   };
 
-  // Fetch invoices on component mount
+  // Re-fetch invoices whenever the selected company changes
   useEffect(() => {
-    fetchInvoices();
-  }, []);
+    if (selectedCompanyId) {
+      fetchInvoices(selectedCompanyId);
+    }
+  }, [selectedCompanyId]);
 
-  const fetchInvoices = async () => {
+  const fetchInvoices = async (companyId) => {
     setLoading(true);
     setError(null);
     try {
-      const selectedCompany = getSecureItem("selectedCompany");
-      const companyId = selectedCompany?.CompanyID;
-      
       if (!companyId) {
         throw new Error("No company selected. Please select a company first.");
       }
 
-      const response = await getCompanyInvoices({ 
-        companyId, 
-        limit: 50, 
-        page: 1 
+      const response = await getCompanyInvoices({
+        companyId,
+        limit: 50,
+        page: 1
       });
 
       if (response.success && Array.isArray(response.data)) {
@@ -265,7 +265,7 @@ const InvoiceProfile = () => {
           <motion.button
             whileHover={{ scale: 1.05, rotate: 180 }}
             whileTap={{ scale: 0.95 }}
-            onClick={fetchInvoices}
+            onClick={() => fetchInvoices(selectedCompanyId)}
             className="p-3 bg-white rounded-full shadow-lg hover:shadow-xl transition-all border-2 border-yellow-100"
             disabled={loading}
           >
@@ -396,7 +396,7 @@ const InvoiceProfile = () => {
                       <FiAlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
                       <p className="text-red-600 mb-4">{error}</p>
                       <button
-                        onClick={fetchInvoices}
+                        onClick={() => fetchInvoices(selectedCompanyId)}
                         className="px-6 py-3 bg-gradient-to-r from-yellow-400 to-yellow-500 text-white rounded-full font-medium shadow-lg hover:shadow-xl transition-all"
                       >
                         Retry
