@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
 import { createCustomer } from "../api/CustomerApi";
+import { getCompanyDetails } from "../api/CompanyApi";
 import { motion } from "framer-motion";
 import { CheckCircle2, XCircle, User, Home } from "lucide-react";
 import { setSecureItem, getSecureItem } from "../utils/secureStorage";
+import { ProfileCompanyContext } from "./ProfileLayout";
 
 // Editable fields
 const editableFields = [
@@ -14,25 +16,50 @@ const editableFields = [
 const viewOnlyFields = [];
 
 const ProfilePage = () => {
+  const { selectedCompanyId } = useContext(ProfileCompanyContext);
   const [user, setUser] = useState({});
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(false);
+  const [fetchLoading, setFetchLoading] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
+  // Fetch the customer record for the selected company
   useEffect(() => {
-    const loadUser = () => {
+    if (!selectedCompanyId) {
+      // Fall back to stored user data if no company selected
       const storedUser = getSecureItem("user");
-      console.log(storedUser, "amlstored");
-      if (storedUser) {
-        setUser(storedUser);
-        setForm(storedUser);
+      if (storedUser) { setUser(storedUser); setForm(storedUser); }
+      return;
+    }
+    const fetchProfile = async () => {
+      setFetchLoading(true);
+      setMessage({ type: "", text: "" });
+      setEditMode(false);
+      try {
+        const response = await getCompanyDetails(selectedCompanyId);
+        if (response.success && response.data) {
+          const storedUser = getSecureItem("user");
+          const customerId = storedUser?.CustomerID;
+          const customers = response.data.Customers || [];
+          // Match logged-in customer, else fall back to primary, else first
+          const matched =
+            customers.find((c) => String(c.CustomerID) === String(customerId)) ||
+            customers.find((c) => c.PrimaryCustomer === 1) ||
+            customers[0];
+          if (matched) {
+            setUser(matched);
+            setForm(matched);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching profile for company:", err);
+      } finally {
+        setFetchLoading(false);
       }
     };
-    loadUser();
-    window.addEventListener("company-switched", loadUser);
-    return () => window.removeEventListener("company-switched", loadUser);
-  }, []);
+    fetchProfile();
+  }, [selectedCompanyId]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
