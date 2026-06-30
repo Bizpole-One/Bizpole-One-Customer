@@ -92,6 +92,7 @@ const CalendarPage = () => {
     };
 
     setEvents([...events, event]);
+    setActiveFilter("ALL");
     setShowEventModal(false);
     setNewEvent({
       title: "",
