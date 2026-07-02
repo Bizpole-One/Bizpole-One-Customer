@@ -1,7 +1,8 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CustomerDocApi from '../api/CustomerDocApi';
 import { getSecureItem } from "../utils/secureStorage";
+import { ProfileCompanyContext } from './ProfileLayout';
 
 const fileTypes = [
   {
@@ -28,6 +29,7 @@ const fileTypes = [
 ];
 
 const CustomerFiles = () => {
+  const { selectedCompanyId } = useContext(ProfileCompanyContext);
   const [files, setFiles] = useState({ PAN: null, ADHAAR: null, PassportPhoto: null });
   const [previews, setPreviews] = useState({ PAN: '', ADHAAR: '', PassportPhoto: '' });
   const [uploadedDocs, setUploadedDocs] = useState({ PAN: false, ADHAAR: false, PassportPhoto: false });
@@ -73,9 +75,6 @@ const CustomerFiles = () => {
       return {};
     }
   };
-
-  // Get customerId from localStorage or context
-  const customerId = getUserData().FirstName;
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -141,6 +140,10 @@ const CustomerFiles = () => {
     const checkUploadedDocuments = async () => {
       try {
         setLoadingDocs(true);
+        setUploadedDocs({ PAN: false, ADHAAR: false, PassportPhoto: false });
+        setUploadedDocData({ PAN: '', ADHAAR: '', PassportPhoto: '' });
+
+        const customerId = getUserData().FirstName;
         const documents = await CustomerDocApi.getUploadedDocuments(customerId);
         console.log('Fetched documents:', documents);
 
@@ -168,7 +171,7 @@ const CustomerFiles = () => {
     };
 
     checkUploadedDocuments();
-  }, []);
+  }, [selectedCompanyId]);
 
   // Upload flow functions
   const handleFileChange = (type, e) => {

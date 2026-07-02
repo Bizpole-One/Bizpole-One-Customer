@@ -140,7 +140,10 @@ export default function ServiceSelection() {
   const [deliverablesError, setDeliverablesError] = useState(null);
   const [approvalStatus, setApprovalStatus] = useState(null);
 
-  // Get selectedCompany from secure storage
+
+  const [companyId, setCompanyId] = useState(() => getSecureItem("selectedCompany")?.CompanyID || null);
+
+  // Clear invalid selectedCompany format
   useEffect(() => {
     const raw = localStorage.getItem("selectedCompany");
     if (raw && raw === "[object Object]") {
@@ -149,8 +152,17 @@ export default function ServiceSelection() {
     }
   }, []);
 
-  const selectedCompany = getSecureItem("selectedCompany");
-  const companyId = selectedCompany?.CompanyID || null;
+  // Re-fetch when company is switched from the dropdown
+  useEffect(() => {
+    const handler = () => {
+      const company = getSecureItem("selectedCompany");
+      setCompanyId(company?.CompanyID || null);
+      setSelectedService(null);
+      setCompanyServices(null);
+    };
+    window.addEventListener("company-switched", handler);
+    return () => window.removeEventListener("company-switched", handler);
+  }, []);
 
   // Fetch company services
   useEffect(() => {
@@ -204,9 +216,12 @@ export default function ServiceSelection() {
           const respFields = await getResponseFieldsBySerId(selectedService.ServiceID);
           const allFields = (respFields.results || []).flatMap((r) => r.fields || []);
 
-          // If any field has reject === 1, status is Not Approved
+          // Approved only when admin has verified all fields (verify === 1)
           const isRejected = allFields.some((f) => f.reject === 1);
-          setApprovalStatus(isRejected ? "Not Approved" : "Approved");
+          const allVerified = allFields.length > 0 && allFields.every((f) => f.verify === 1);
+          setApprovalStatus(
+            isRejected ? "Not Approved" : allVerified ? "Approved" : "In review"
+          );
         } catch (err) {
           setTasksError("Failed to fetch tasks from /Task API.");
           setApprovalStatus(null);
