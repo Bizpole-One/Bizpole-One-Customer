@@ -289,19 +289,19 @@ const ProfileLayout = () => {
             <h3 className="text-base font-bold text-gray-900 mb-4">Your Credit Score</h3>
             <div className="relative w-40 h-24 mx-auto">
               <svg viewBox="0 0 200 110" className="w-full h-full">
-                <path d="M 15 100 A 85 85 0 0 1 185 100" fill="none" stroke="#FDE9B8" strokeWidth="14" strokeLinecap="round" />
+                <path d="M 15 100 A 85 85 0 0 1 185 100" fill="none" stroke="#FDE9B8" strokeWidth="10" strokeLinecap="round" />
                 <path
                   d="M 15 100 A 85 85 0 0 1 185 100"
                   fill="none"
                   stroke="#FBBF24"
-                  strokeWidth="14"
+                  strokeWidth="10"
                   strokeLinecap="round"
                   strokeDasharray="267"
                   strokeDashoffset={267 - (267 * creditScorePercent) / 100}
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
-                <span className="text-3xl font-bold text-gray-900">{creditScore}</span>
+                <span className="text-2xl font-bold text-gray-900">{creditScore}</span>
               </div>
             </div>
             <button className="text-sm font-semibold text-yellow-600 mt-2 hover:underline">
