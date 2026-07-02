@@ -1,14 +1,24 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useContext } from "react";
 import {
-  Building2, FileText, MapPin, Users, User, Phone,
-  CheckCircle, XCircle, ChevronRight, ArrowLeftRight,
-  Pencil, Save, X, AlertCircle,
+  Building2,
+  FileText,
+  MapPin,
+  Users,
+  User,
+  Phone,
+  CheckCircle,
+  XCircle,
+  ChevronRight,
+  Pencil,
+  Save,
+  X,
+  AlertCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { getCompanyDetails } from "../api/CompanyApi";
-import { getSecureItem, setSecureItem } from "../utils/secureStorage";
+import { getCompanyDetails, updateCompanyDetails } from "../api/CompanyApi";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { ProfileCompanyContext } from "./ProfileLayout";
 
 /* ---------- Reusable pieces ---------- */
 
@@ -23,7 +33,14 @@ const ViewField = ({ label, value, valueClassName = "" }) => (
   </div>
 );
 
-const EditField = ({ label, value, onChange, type = "text", placeholder = "", textarea = false }) => (
+const EditField = ({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder = "",
+  textarea = false,
+}) => (
   <div>
     <label className="block text-xs text-gray-500 mb-1.5">{label}</label>
     {textarea ? (
@@ -92,7 +109,12 @@ const RadioGroup = ({ label, options, value, onChange, columns = 2 }) => (
     <label className="block text-xs text-gray-500 mb-1.5">{label}</label>
     <div className={`grid ${COLS_CLASS[columns] || "grid-cols-2"} gap-3`}>
       {options.map((opt) => (
-        <RadioOption key={opt} label={opt} selected={value === opt} onClick={() => onChange(opt)} />
+        <RadioOption
+          key={opt}
+          label={opt}
+          selected={value === opt}
+          onClick={() => onChange(opt)}
+        />
       ))}
     </div>
   </div>
@@ -102,7 +124,9 @@ const Card = ({ title, icon: Icon, iconBg = "bg-yellow-400", children }) => (
   <div className="bg-white rounded-2xl border border-yellow-100 p-6">
     <div className="flex items-center gap-2.5 mb-6">
       {Icon && (
-        <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconBg}`}>
+        <span
+          className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconBg}`}
+        >
           <Icon size={16} className="text-white" />
         </span>
       )}
@@ -126,7 +150,9 @@ const ErrorScreen = ({ error }) => (
   <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
     <div className="bg-white rounded-2xl shadow-sm p-8 max-w-md text-center border border-gray-200">
       <XCircle className="w-14 h-14 text-yellow-400 mx-auto mb-4" />
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Something went wrong</h3>
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+        Something went wrong
+      </h3>
       <p className="text-gray-500 text-sm mb-6">{error}</p>
       <button
         onClick={() => window.location.reload()}
@@ -141,14 +167,14 @@ const ErrorScreen = ({ error }) => (
 /* ---------- Main component ---------- */
 
 const CompanyDetails = () => {
+  const { selectedCompanyId } = useContext(ProfileCompanyContext);
   const [company, setCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [companies, setCompanies] = useState([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(getSecureItem("CompanyId") || "");
 
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [companyForm, setCompanyForm] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const [isEditingDirector, setIsEditingDirector] = useState(false);
   const [directorForm, setDirectorForm] = useState({});
@@ -156,18 +182,17 @@ const CompanyDetails = () => {
   const directorRef = useRef(null);
 
   useEffect(() => {
-    const user = getSecureItem("user");
-    if (user && user.Companies) {
-      setCompanies(user.Companies);
-      if (!selectedCompanyId && user.Companies.length > 0) {
-        const companyId = user.Companies[0].CompanyID.toString();
-        setSelectedCompanyId(companyId);
-        setSecureItem("CompanyId", companyId);
-      }
-    }
-  }, []);
+    // Reset all state immediately so stale data from the previous company isn't visible
+    setCompany(null);
+    setError(null);
+    setIsEditingCompany(false);
+    setIsEditingDirector(false);
+    setSaving(false);
+    setCompanyForm({});
+    setDirectorForm({});
 
-  useEffect(() => {
+    if (!selectedCompanyId) return;
+
     const fetchCompany = async () => {
       setLoading(true);
       try {
@@ -184,36 +209,36 @@ const CompanyDetails = () => {
         setLoading(false);
       }
     };
-    if (selectedCompanyId) fetchCompany();
+    fetchCompany();
   }, [selectedCompanyId]);
 
-  const handleCompanyChange = (companyId) => {
-    setSelectedCompanyId(companyId);
-    setSecureItem("CompanyId", companyId);
-    setError(null);
-  };
-
   const primaryDirector =
-    company?.Customers?.find((c) => c.PrimaryCustomer === 1) || company?.Customers?.[0] || {};
+    company?.Customers?.find((c) => c.PrimaryCustomer === 1) ||
+    company?.Customers?.[0] ||
+    {};
 
   /* ---- Company edit handlers ---- */
   const startEditCompany = () => {
     setCompanyForm({
-      businessType: company?.ConstitutionCategory || "Pvt Ltd",
-      businessName: company?.BusinessName || "",
-      dateOfIncorporation: company?.DateOfIncorporation || "",
-      pan: company?.PAN || "",
-      cin: company?.CIN || "",
-      businessActivity: company?.BusinessNature || "",
-      gstStatus: company?.GSTRegistrationStatus || "Yes",
-      gstNumber: company?.GSTNumber || "",
-      gstType: company?.GSTType || "Regular",
-      registeredOffice: company?.RegisteredOffice || "",
-      address: company?.Address || "",
-      locality: company?.Locality || "",
-      city: company?.City || "",
-      state: company?.State || "",
-      pincode: company?.PinCode || "",
+      businessType:      company?.ConstitutionCategory || "Pvt Ltd",
+      businessName:      company?.BusinessName || "",
+      companyCode:       company?.CompanyCode || "",
+      foundingDate:      company?.CompanyFoundingDate || "",
+      pan:               company?.CompanyPAN || "",
+      cin:               company?.CIN || "",
+      sector:            company?.Sector || "",
+      businessActivity:  company?.BusinessNature || "",
+      gstNumber:         company?.GSTNumber || "",
+      companyEmail:      company?.CompanyEmail || "",
+      companyMobile:     company?.CompanyMobile || "",
+      website:           company?.Website || "",
+      addressLine1:      company?.AddressLine1 || "",
+      addressLine2:      company?.AddressLine2 || "",
+      district:          company?.District || "",
+      city:              company?.City || "",
+      state:             company?.State || "",
+      country:           company?.Country || "India",
+      pincode:           company?.PinCode || "",
     });
     setIsEditingCompany(true);
   };
@@ -221,52 +246,85 @@ const CompanyDetails = () => {
   const cancelEditCompany = () => setIsEditingCompany(false);
 
   const handleSaveCompany = async () => {
+    setSaving(true);
     try {
-      // TODO: wire to a real update endpoint, e.g.:
-      // await updateCompanyDetails(selectedCompanyId, companyForm);
+      await updateCompanyDetails(selectedCompanyId, {
+        ConstitutionCategory: companyForm.businessType,
+        BusinessName:         companyForm.businessName,
+        CompanyPAN:           companyForm.pan,
+        GSTNumber:            companyForm.gstNumber,
+        CIN:                  companyForm.cin,
+        Sector:               companyForm.sector,
+        BusinessNature:       companyForm.businessActivity,
+        CompanyFoundingDate:  companyForm.foundingDate || null,
+        CompanyEmail:         companyForm.companyEmail,
+        CompanyMobile:        companyForm.companyMobile,
+        Website:              companyForm.website,
+        AddressLine1:         companyForm.addressLine1,
+        AddressLine2:         companyForm.addressLine2,
+        District:             companyForm.district,
+        City:                 companyForm.city,
+        State:                companyForm.state,
+        PinCode:              companyForm.pincode,
+        Country:              companyForm.country,
+      });
       setCompany((prev) => ({
         ...prev,
         ConstitutionCategory: companyForm.businessType,
-        BusinessName: companyForm.businessName,
-        DateOfIncorporation: companyForm.dateOfIncorporation,
-        PAN: companyForm.pan,
-        CIN: companyForm.cin,
-        BusinessNature: companyForm.businessActivity,
-        GSTRegistrationStatus: companyForm.gstStatus,
-        GSTNumber: companyForm.gstNumber,
-        GSTType: companyForm.gstType,
-        RegisteredOffice: companyForm.registeredOffice,
-        Address: companyForm.address,
-        Locality: companyForm.locality,
-        City: companyForm.city,
-        State: companyForm.state,
-        PinCode: companyForm.pincode,
+        BusinessName:         companyForm.businessName,
+        CompanyCode:          companyForm.companyCode,
+        CompanyFoundingDate:  companyForm.foundingDate,
+        CompanyPAN:           companyForm.pan,
+        CIN:                  companyForm.cin,
+        Sector:               companyForm.sector,
+        BusinessNature:       companyForm.businessActivity,
+        GSTNumber:            companyForm.gstNumber,
+        CompanyEmail:         companyForm.companyEmail,
+        CompanyMobile:        companyForm.companyMobile,
+        Website:              companyForm.website,
+        AddressLine1:         companyForm.addressLine1,
+        AddressLine2:         companyForm.addressLine2,
+        District:             companyForm.district,
+        City:                 companyForm.city,
+        State:                companyForm.state,
+        Country:              companyForm.country,
+        PinCode:              companyForm.pincode,
       }));
       setIsEditingCompany(false);
       toast.success("Company details updated");
     } catch (err) {
       console.error(err);
       toast.error("Failed to update company details");
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleContinueToDirector = async () => {
     await handleSaveCompany();
     startEditDirector();
-    setTimeout(() => directorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    setTimeout(
+      () =>
+        directorRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        }),
+      100,
+    );
   };
 
   /* ---- Director edit handlers ---- */
   const startEditDirector = () => {
     setDirectorForm({
       numberOfDirectors: company?.Customers?.length || 1,
-      fullName: `${primaryDirector.FirstName || ""} ${primaryDirector.LastName || ""}`.trim(),
+      fullName:
+        `${primaryDirector.FirstName || ""} ${primaryDirector.LastName || ""}`.trim(),
       designation: primaryDirector.Designation || "",
       din: primaryDirector.DIN || "",
       mobile: primaryDirector.Mobile || "",
       email: primaryDirector.Email || "",
       panNumber: primaryDirector.PANNumber || "",
-      aadhaar: primaryDirector.AadhaarNumber || "",
+      dateOfBirth: primaryDirector.DateOfBirth || "",
     });
     setIsEditingDirector(true);
   };
@@ -292,7 +350,6 @@ const CompanyDetails = () => {
     <div className=" bg-gray-50 p-4 md:p-6 lg:p-8">
       <ToastContainer position="top-right" autoClose={3000} />
       <div className="max-w-6xl mx-auto space-y-10">
-
         {/* {companies.length > 1 && (
           <div className="flex items-center gap-3 bg-white rounded-full p-2 border border-gray-200 shadow-sm w-fit">
             <ArrowLeftRight className="w-4 h-4 text-yellow-500 ml-3" />
@@ -314,7 +371,9 @@ const CompanyDetails = () => {
         <section>
           {!isEditingCompany ? (
             <div className="flex items-center justify-between mb-6">
-              <h1 className="text-2xl font-bold text-gray-900">Company details</h1>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Company details
+              </h1>
               <button
                 onClick={startEditCompany}
                 className="flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-black font-medium px-4 py-2.5 rounded-lg text-sm transition"
@@ -326,8 +385,12 @@ const CompanyDetails = () => {
             <div className="mb-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Company Details</h1>
-                  <p className="text-sm text-gray-500 mt-0.5">Manage your business information and settings</p>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Company Details
+                  </h1>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Manage your business information and settings
+                  </p>
                 </div>
                 <div className="flex gap-3">
                   <button
@@ -338,30 +401,38 @@ const CompanyDetails = () => {
                   </button>
                   <button
                     onClick={handleSaveCompany}
-                    className="flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-500 text-black font-medium px-4 py-2.5 rounded-lg text-sm transition"
+                    disabled={saving}
+                    className="flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-500 text-black font-medium px-4 py-2.5 rounded-lg text-sm transition disabled:opacity-50"
                   >
-                    <Save size={14} /> Save Changes
+                    <Save size={14} /> {saving ? "Saving…" : "Save Changes"}
                   </button>
                 </div>
               </div>
               <div className="flex items-start gap-2 bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-lg px-4 py-3">
                 <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                You are currently editing your company details. Don't forget to save your changes.
+                You are currently editing your company details. Don't forget to
+                save your changes.
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Basic Information */}
-            <Card title="Basic Information" icon={isEditingCompany ? Building2 : undefined} iconBg="bg-purple-400">
+            <Card
+              title="Basic Information"
+              icon={isEditingCompany ? Building2 : undefined}
+              iconBg="bg-purple-400"
+            >
               {!isEditingCompany ? (
                 <div className="space-y-4">
-                  <ViewField label="Type of Business" value={company?.ConstitutionCategory} />
-                  <ViewField label="Name of Business" value={company?.BusinessName} />
-                  <ViewField label="Date of Incorporation" value={company?.DateOfIncorporation} />
-                  <ViewField label="PAN of the Entity" value={company?.PAN} />
-                  <ViewField label="CIN/LLPIN" value={company?.CIN} />
-                  <ViewField label="Business Activity" value={company?.BusinessNature} />
+                  <ViewField label="Type of Business"   value={company?.ConstitutionCategory} />
+                  <ViewField label="Name of Business"   value={company?.BusinessName} />
+                  <ViewField label="Company Code"       value={company?.CompanyCode} />
+                  <ViewField label="Date of Founding"   value={company?.CompanyFoundingDate} />
+                  <ViewField label="PAN of the Entity"  value={company?.CompanyPAN} />
+                  <ViewField label="CIN/LLPIN"          value={company?.CIN} />
+                  <ViewField label="Sector"             value={company?.Sector} />
+                  <ViewField label="Business Nature"    value={company?.BusinessNature} />
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -378,10 +449,15 @@ const CompanyDetails = () => {
                     onChange={(e) => setCompanyForm({ ...companyForm, businessName: e.target.value })}
                   />
                   <EditField
-                    label="Date of Incorporation"
+                    label="Company Code"
+                    value={companyForm.companyCode}
+                    onChange={(e) => setCompanyForm({ ...companyForm, companyCode: e.target.value })}
+                  />
+                  <EditField
+                    label="Date of Founding"
                     type="date"
-                    value={companyForm.dateOfIncorporation}
-                    onChange={(e) => setCompanyForm({ ...companyForm, dateOfIncorporation: e.target.value })}
+                    value={companyForm.foundingDate}
+                    onChange={(e) => setCompanyForm({ ...companyForm, foundingDate: e.target.value })}
                   />
                   <EditField
                     label="PAN of the Entity"
@@ -393,50 +469,57 @@ const CompanyDetails = () => {
                     value={companyForm.cin}
                     onChange={(e) => setCompanyForm({ ...companyForm, cin: e.target.value })}
                   />
-                  <EditSelect
-                    label="Business Activity"
+                  <EditField
+                    label="Sector"
+                    value={companyForm.sector}
+                    onChange={(e) => setCompanyForm({ ...companyForm, sector: e.target.value })}
+                  />
+                  <EditField
+                    label="Business Nature"
                     value={companyForm.businessActivity}
                     onChange={(e) => setCompanyForm({ ...companyForm, businessActivity: e.target.value })}
-                    options={["Information Technology", "Manufacturing", "Retail", "Services", "Other"]}
                   />
                 </div>
               )}
             </Card>
 
-            {/* GST Information */}
-            <Card title="GST Information" icon={isEditingCompany ? FileText : undefined} iconBg="bg-green-400">
+            {/* Contact & GST Information */}
+            <Card
+              title="Contact & GST Information"
+              icon={isEditingCompany ? FileText : undefined}
+              iconBg="bg-green-400"
+            >
               {!isEditingCompany ? (
                 <div className="space-y-4">
-                  <ViewField label="GST Registration Status" value={company?.GSTRegistrationStatus} />
-                  <ViewField label="GST Registration Number" value={company?.GSTNumber} />
-                  <ViewField label="GST Registration Type" value={company?.GSTType} />
-                  <ViewField label="Registered Office" value={company?.RegisteredOffice} />
+                  <ViewField label="GST Number"      value={company?.GSTNumber} />
+                  <ViewField label="Company Email"   value={company?.CompanyEmail} />
+                  <ViewField label="Company Mobile"  value={company?.CompanyMobile} />
+                  <ViewField label="Website"         value={company?.Website} />
+                  <ViewField label="Status"          value={company?.Status} />
+                  <ViewField label="Franchise"       value={company?.FranchiseName} />
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <RadioGroup
-                    label="GST Registration Status"
-                    options={["Yes", "No", "NA"]}
-                    value={companyForm.gstStatus}
-                    onChange={(val) => setCompanyForm({ ...companyForm, gstStatus: val })}
-                    columns={3}
-                  />
                   <EditField
-                    label="GST Registration Number"
+                    label="GST Number"
                     value={companyForm.gstNumber}
                     onChange={(e) => setCompanyForm({ ...companyForm, gstNumber: e.target.value })}
                   />
-                  <RadioGroup
-                    label="GST Registration Type"
-                    options={["Regular", "Composition", "Input Tax Credit Forfeiture (IFF)"]}
-                    value={companyForm.gstType}
-                    onChange={(val) => setCompanyForm({ ...companyForm, gstType: val })}
-                    columns={1}
+                  <EditField
+                    label="Company Email"
+                    type="email"
+                    value={companyForm.companyEmail}
+                    onChange={(e) => setCompanyForm({ ...companyForm, companyEmail: e.target.value })}
                   />
                   <EditField
-                    label="Registered Office"
-                    value={companyForm.registeredOffice}
-                    onChange={(e) => setCompanyForm({ ...companyForm, registeredOffice: e.target.value })}
+                    label="Company Mobile"
+                    value={companyForm.companyMobile}
+                    onChange={(e) => setCompanyForm({ ...companyForm, companyMobile: e.target.value })}
+                  />
+                  <EditField
+                    label="Website"
+                    value={companyForm.website}
+                    onChange={(e) => setCompanyForm({ ...companyForm, website: e.target.value })}
                   />
                 </div>
               )}
@@ -444,36 +527,47 @@ const CompanyDetails = () => {
           </div>
 
           {/* Communication Address */}
-          <Card title="Communication Address" icon={isEditingCompany ? MapPin : undefined} iconBg="bg-yellow-400">
+          <Card
+            title="Communication Address"
+            icon={isEditingCompany ? MapPin : undefined}
+            iconBg="bg-yellow-400"
+          >
             {!isEditingCompany ? (
               <div className="space-y-4">
-                <ViewField label="Address" value={company?.Address} />
+                <ViewField label="Address Line 1" value={company?.AddressLine1} />
+                <ViewField label="Address Line 2" value={company?.AddressLine2} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <ViewField label="Locality/Town" value={company?.Locality} />
-                  <ViewField label="City/District" value={company?.City} />
+                  <ViewField label="District"     value={company?.District} />
+                  <ViewField label="City"         value={company?.City} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <ViewField label="State" value={company?.State} />
-                  <ViewField label="Pincode" value={company?.PinCode} />
+                  <ViewField label="State"        value={company?.State} />
+                  <ViewField label="Pin Code"     value={company?.PinCode} />
                 </div>
+                <ViewField label="Country"        value={company?.Country} />
               </div>
             ) : (
               <div className="space-y-4">
                 <EditField
-                  label="Complete Address"
-                  textarea
-                  placeholder="House No, Building, Street Area"
-                  value={companyForm.address}
-                  onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })}
+                  label="Address Line 1"
+                  placeholder="House No, Building, Street"
+                  value={companyForm.addressLine1}
+                  onChange={(e) => setCompanyForm({ ...companyForm, addressLine1: e.target.value })}
+                />
+                <EditField
+                  label="Address Line 2"
+                  placeholder="Area, Landmark"
+                  value={companyForm.addressLine2}
+                  onChange={(e) => setCompanyForm({ ...companyForm, addressLine2: e.target.value })}
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <EditField
-                    label="Locality/Town"
-                    value={companyForm.locality}
-                    onChange={(e) => setCompanyForm({ ...companyForm, locality: e.target.value })}
+                    label="District"
+                    value={companyForm.district}
+                    onChange={(e) => setCompanyForm({ ...companyForm, district: e.target.value })}
                   />
                   <EditField
-                    label="City/District"
+                    label="City"
                     value={companyForm.city}
                     onChange={(e) => setCompanyForm({ ...companyForm, city: e.target.value })}
                   />
@@ -485,11 +579,16 @@ const CompanyDetails = () => {
                     onChange={(e) => setCompanyForm({ ...companyForm, state: e.target.value })}
                   />
                   <EditField
-                    label="Pincode"
+                    label="Pin Code"
                     value={companyForm.pincode}
                     onChange={(e) => setCompanyForm({ ...companyForm, pincode: e.target.value })}
                   />
                 </div>
+                <EditField
+                  label="Country"
+                  value={companyForm.country}
+                  onChange={(e) => setCompanyForm({ ...companyForm, country: e.target.value })}
+                />
               </div>
             )}
           </Card>
@@ -514,8 +613,12 @@ const CompanyDetails = () => {
                 <Users size={18} className="text-white" />
               </span>
               <div>
-                <h2 className="text-lg font-bold text-gray-900">Director/Promoter Details</h2>
-                <p className="text-sm text-gray-500">Manage director and promoter information</p>
+                <h2 className="text-lg font-bold text-gray-900">
+                  Director/Promoter Details
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Manage director and promoter information
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -568,7 +671,14 @@ const CompanyDetails = () => {
                     value={primaryDirector.Designation}
                     valueClassName="text-amber-600 font-medium"
                   />
-                  <ViewField label="DIN (Director Identification Number)" value={primaryDirector.DIN} />
+                  <ViewField
+                    label="DIN (Director Identification Number)"
+                    value={primaryDirector.DIN}
+                  />
+                  <ViewField
+                    label="Shareholding %"
+                    value={primaryDirector.Shareholding}
+                  />
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -576,22 +686,39 @@ const CompanyDetails = () => {
                     label="Number of Directors/Partners"
                     type="number"
                     value={directorForm.numberOfDirectors}
-                    onChange={(e) => setDirectorForm({ ...directorForm, numberOfDirectors: e.target.value })}
+                    onChange={(e) =>
+                      setDirectorForm({
+                        ...directorForm,
+                        numberOfDirectors: e.target.value,
+                      })
+                    }
                   />
                   <EditField
                     label="Full Name"
                     value={directorForm.fullName}
-                    onChange={(e) => setDirectorForm({ ...directorForm, fullName: e.target.value })}
+                    onChange={(e) =>
+                      setDirectorForm({
+                        ...directorForm,
+                        fullName: e.target.value,
+                      })
+                    }
                   />
                   <EditField
                     label="Designation"
                     value={directorForm.designation}
-                    onChange={(e) => setDirectorForm({ ...directorForm, designation: e.target.value })}
+                    onChange={(e) =>
+                      setDirectorForm({
+                        ...directorForm,
+                        designation: e.target.value,
+                      })
+                    }
                   />
                   <EditField
                     label="DIN (Director Identification Number)"
                     value={directorForm.din}
-                    onChange={(e) => setDirectorForm({ ...directorForm, din: e.target.value })}
+                    onChange={(e) =>
+                      setDirectorForm({ ...directorForm, din: e.target.value })
+                    }
                   />
                 </div>
               )}
@@ -600,33 +727,71 @@ const CompanyDetails = () => {
             <Card title="Contact Information" icon={Phone}>
               {!isEditingDirector ? (
                 <div className="space-y-4">
-                  <ViewField label="Mobile Number" value={primaryDirector.Mobile} />
+                  <ViewField
+                    label="Mobile Number"
+                    value={primaryDirector.Mobile}
+                  />
                   <ViewField label="Email ID" value={primaryDirector.Email} />
-                  <ViewField label="PAN Number" value={primaryDirector.PANNumber} />
-                  <ViewField label="Aadhaar Number" value={primaryDirector.AadhaarNumber} />
+                  <ViewField
+                    label="PAN Number"
+                    value={primaryDirector.PANNumber}
+                  />
+                  <ViewField
+                    label="Date of Birth"
+                    value={primaryDirector.DateOfBirth}
+                  />
+                  <ViewField
+                    label="Company Email"
+                    value={company?.CompanyEmail}
+                  />
+                  <ViewField
+                    label="Company Mobile"
+                    value={company?.CompanyMobile}
+                  />
                 </div>
               ) : (
                 <div className="space-y-4">
                   <EditField
                     label="Mobile Number"
                     value={directorForm.mobile}
-                    onChange={(e) => setDirectorForm({ ...directorForm, mobile: e.target.value })}
+                    onChange={(e) =>
+                      setDirectorForm({
+                        ...directorForm,
+                        mobile: e.target.value,
+                      })
+                    }
                   />
                   <EditField
                     label="Email ID"
                     type="email"
                     value={directorForm.email}
-                    onChange={(e) => setDirectorForm({ ...directorForm, email: e.target.value })}
+                    onChange={(e) =>
+                      setDirectorForm({
+                        ...directorForm,
+                        email: e.target.value,
+                      })
+                    }
                   />
                   <EditField
                     label="PAN Number"
                     value={directorForm.panNumber}
-                    onChange={(e) => setDirectorForm({ ...directorForm, panNumber: e.target.value })}
+                    onChange={(e) =>
+                      setDirectorForm({
+                        ...directorForm,
+                        panNumber: e.target.value,
+                      })
+                    }
                   />
                   <EditField
-                    label="Aadhaar Number"
-                    value={directorForm.aadhaar}
-                    onChange={(e) => setDirectorForm({ ...directorForm, aadhaar: e.target.value })}
+                    label="Date of Birth"
+                    type="date"
+                    value={directorForm.dateOfBirth}
+                    onChange={(e) =>
+                      setDirectorForm({
+                        ...directorForm,
+                        dateOfBirth: e.target.value,
+                      })
+                    }
                   />
                 </div>
               )}

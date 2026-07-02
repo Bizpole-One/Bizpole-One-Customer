@@ -17,8 +17,10 @@ import {
   ArrowLeft,
   Camera,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, createContext } from "react";
 import ConfirmMsg from "../components/ConfirmMsg";
+
+export const ProfileCompanyContext = createContext(null);
 
 const menuItems = [
   { name: "Profile", path: "", icon: LayoutGrid },
@@ -33,6 +35,7 @@ const ProfileLayout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState({});
   const [selectedCompany, setSelectedCompany] = useState("");
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
   const [companies, setCompanies] = useState([]);
   const navigate = useNavigate();
@@ -68,10 +71,12 @@ const ProfileLayout = () => {
             );
             if (found) {
               setSelectedCompany(found.BusinessName || found.CompanyName || "");
+              setSelectedCompanyId(found.CompanyID);
             } else {
               // saved selectedCompany not found in user's companies, fallback to first
               const first = parsedUser.Companies[0];
               setSelectedCompany(first.BusinessName || first.CompanyName || "");
+              setSelectedCompanyId(first.CompanyID);
               setSecureItem(
                 "selectedCompany",
                 JSON.stringify({
@@ -84,6 +89,7 @@ const ProfileLayout = () => {
             // no saved selectedCompany -> set first and persist
             const first = parsedUser.Companies[0];
             setSelectedCompany(first.BusinessName || first.CompanyName || "");
+            setSelectedCompanyId(first.CompanyID);
             setSecureItem(
               "selectedCompany",
               JSON.stringify({
@@ -143,18 +149,19 @@ const ProfileLayout = () => {
                       : ""
                       }`}
                     onClick={() => {
-                      setSelectedCompany(company.BusinessName || company.CompanyName || "");
+                      const companyName = company.BusinessName || company.CompanyName || "";
+                      setSelectedCompany(companyName);
+                      setSelectedCompanyId(company.CompanyID);
                       setSecureItem(
                         "selectedCompany",
                         JSON.stringify({
                           CompanyID: company.CompanyID,
-                          CompanyName: company.BusinessName || company.CompanyName || "",
+                          CompanyName: companyName,
                         })
                       );
                       setSecureItem("CompanyId", company.CompanyID.toString());
                       setShowCompanyDropdown(false);
-                      // Force reload to ensure all order pages use new company
-                      window.location.reload();
+                      window.dispatchEvent(new Event("company-switched"));
                     }}
                   >
                     {company.BusinessName || company.CompanyName}
@@ -354,7 +361,9 @@ const ProfileLayout = () => {
 
       {/* ===== Main Content ===== */}
       <main className="flex-1 p-8 overflow-y-auto mt-[76px]">
-        <Outlet />
+        <ProfileCompanyContext.Provider value={{ selectedCompanyId, selectedCompanyName: selectedCompany }}>
+          <Outlet />
+        </ProfileCompanyContext.Provider>
       </main>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiFileText,
@@ -9,12 +9,13 @@ import {
   FiAlertCircle
 } from 'react-icons/fi';
 import { getCompanyInvoices } from '../api/Companyinvoice';
-import { getSecureItem } from '../utils/secureStorage';
 import CryptoJS from "crypto-js";
+import { ProfileCompanyContext } from './ProfileLayout';
 import { useNavigate } from 'react-router-dom';
 
 const InvoiceProfile = () => {
   const navigate = useNavigate();
+  const { selectedCompanyId } = useContext(ProfileCompanyContext);
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedFaq, setExpandedFaq] = useState(null);
   const [invoices, setInvoices] = useState([]);
@@ -30,20 +31,15 @@ const InvoiceProfile = () => {
   });
 
   useEffect(() => {
-    fetchInvoices();
-  }, []);
+    if (selectedCompanyId) {
+      fetchInvoices(selectedCompanyId);
+    }
+  }, [selectedCompanyId]);
 
-  const fetchInvoices = async () => {
+  const fetchInvoices = async (companyId) => {
     setLoading(true);
     setError(null);
     try {
-      const selectedCompany = getSecureItem("selectedCompany");
-      const companyId = selectedCompany?.CompanyID;
-
-      if (!companyId) {
-        throw new Error("No company selected. Please select a company first.");
-      }
-
       const response = await getCompanyInvoices({
         companyId,
         limit: 50,

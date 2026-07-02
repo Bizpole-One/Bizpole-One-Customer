@@ -1,15 +1,29 @@
 import { useEffect, useState } from "react";
 import { createCustomer } from "../api/CustomerApi";
 import { motion } from "framer-motion";
-import { CheckCircle2, XCircle, User, Mail, Phone, MapPin, Save } from "lucide-react";
+import {
+  CheckCircle2,
+  XCircle,
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Save,
+} from "lucide-react";
 import { setSecureItem, getSecureItem } from "../utils/secureStorage";
 
 // Field config — name must match your user/form object keys
 const editableFields = [
-  { name: "FirstName", label: "Full Name", icon: <User size={16} /> },
-  { name: "Email", label: "Email Address", icon: <Mail size={16} /> },
-  { name: "Phone", label: "Phone Number", icon: <Phone size={16} /> },
-  { name: "AddressLine1", label: "Address", icon: <MapPin size={16} />, fullWidth: true, type: "textarea" },
+  { name: "FirstName",    label: "Full Name",     icon: <User  size={16} /> },
+  { name: "Email",        label: "Email Address", icon: <Mail  size={16} /> },
+  { name: "Mobile",       label: "Phone Number",  icon: <Phone size={16} /> },
+  {
+    name: "AddressLine1",
+    label: "Address",
+    icon: <MapPin size={16} />,
+    fullWidth: true,
+    type: "textarea",
+  },
 ];
 
 const ProfilePage = () => {
@@ -87,7 +101,9 @@ const ProfilePage = () => {
       >
         <div className="flex items-center gap-2 mb-1">
           <User className="text-yellow-500" size={20} />
-          <h2 className="text-lg font-semibold text-gray-900">Contact Information</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Contact Information
+          </h2>
         </div>
         <p className="text-sm text-gray-500 mb-6">
           Manage your personal contact details and address information.
@@ -126,7 +142,9 @@ const ProfilePage = () => {
                 )
               ) : (
                 <div className="text-gray-800 text-sm px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg min-h-[42px]">
-                  {user[field.name] || <span className="text-gray-400">Not set</span>}
+                  {user[field.name] || (
+                    <span className="text-gray-400">Not set</span>
+                  )}
                 </div>
               )}
             </div>
@@ -164,8 +182,9 @@ const ProfilePage = () => {
 
         {message.text && (
           <motion.div
-            className={`mt-6 flex items-center gap-2 justify-center text-sm font-medium ${message.type === "success" ? "text-green-600" : "text-red-600"
-              }`}
+            className={`mt-6 flex items-center gap-2 justify-center text-sm font-medium ${
+              message.type === "success" ? "text-green-600" : "text-red-600"
+            }`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
           >

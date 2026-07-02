@@ -42,6 +42,17 @@ const InvoicePreview = () => {
 
   const orderId = decryptOrderId();
 
+  // Reset and refetch when company is switched from the dropdown
+  useEffect(() => {
+    const handler = () => {
+      setInvoice(null);
+      setError(null);
+      setLoading(true);
+    };
+    window.addEventListener("company-switched", handler);
+    return () => window.removeEventListener("company-switched", handler);
+  }, []);
+
   useEffect(() => {
     // If we already have invoice data from state, no need to fetch
     if (invoice) {
