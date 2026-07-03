@@ -236,6 +236,28 @@ button[class*="w-"][class*="h-"] {
   padding: revert !important;
 }
 
+/* Any button explicitly sized via Tailwind utilities should win over the global default */
+button[class*="rounded-full"],
+button[class*="px-"],
+button[class*="py-"] {
+  padding: revert !important;
+}
+
+button[class*="rounded-full"] {
+  border-radius: 9999px !important;
+}
+
+button[class*="text-xs"],
+button[class*="text-sm"],
+button[class*="text-base"],
+button[class*="text-lg"] {
+  font-size: revert !important;
+}
+
+button[class*="w-"][class*="h-"] {
+  padding: revert !important;
+}
+
 /* Hide scrollbars everywhere, on every element, regardless of what's scrolling */
 * {
   scrollbar-width: none;      /* Firefox */

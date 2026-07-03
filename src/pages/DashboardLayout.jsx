@@ -127,6 +127,7 @@ const DashboardLayout = () => {
       CompanyName: company.BusinessName,
       State: company.State || ""
     }));
+    window.dispatchEvent(new Event("company-switched"));
     setShowCompanyDropdown(false);
   };
 
