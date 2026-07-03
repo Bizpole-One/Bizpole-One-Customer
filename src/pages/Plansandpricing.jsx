@@ -34,23 +34,16 @@ const PlansAndPricing = () => {
   // 🔹 Handle package quote
   const handlePackageQuote = async (plan) => {
     try {
-      // Always send the package's services as ServiceDetails in the payload
-      const serviceDetailsArr = Array.isArray(plan.services)
-        ? plan.services.map((s) => ({
-          ServiceID: s.ServiceID,
-          ServiceName: s.ServiceName || s.name,
-          Price: s.Price || s.price || 0,
-          Description: s.Description || s.description || '',
-        }))
-        : [];
-
       const quoteData = {
         packageId: plan.id || plan.packageId || plan.PackageID,
         packageName: plan.name || plan.PackageName || plan.packageName,
         amount: plan.price || plan.YearlyMRP || plan.amount,
         type: "package",
-        ServiceDetails: serviceDetailsArr,
-        services: serviceDetailsArr, // For upsertQuote.js to map package services
+        // Pass the package's services through as-is (with their real
+        // ProfessionalFeeYearly/VendorFeeYearly/GovernmentFeeYearly columns) so
+        // upsertQuote.js can compute real fees/GST instead of falling back to
+        // hardcoded placeholders.
+        services: Array.isArray(plan.services) ? plan.services : [],
       };
 
       quoteData.is_manual = 0;

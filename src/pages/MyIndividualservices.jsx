@@ -3,15 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { getOrdersByCompanyId } from "../api/Orders/Order";
 import { getSecureItem } from "../utils/secureStorage";
 import DataTable from "../components/Datatable";
-import { DollarSign, CheckCircle, FileText, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { DollarSign, CheckCircle, FileText, CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react";
 
 /* ── Order status mapping ── */
 const orderStatusList = [
-  { value: 1, label: 'In Progress' },
-  { value: 2, label: 'Completed' },
-  { value: 3, label: 'Pending' },
-  { value: 4, label: 'Completed' },
-  { value: 5, label: 'Completed, Payment Done' },
+  { value: 1, label: "Not Started" },
+  { value: 2, label: "Action Required" },
+  { value: 3, label: "In Process" },
+  { value: 4, label: "Completed" },
+  { value: 5, label: "On Hold" },
+  { value: 6, label: "Dropped" },
+  { value: 7, label: "Cancelled" },
+  { value: 8, label: "Expired" },
 ];
 
 const getOrderStatusLabel = (statusValue) => {
@@ -37,11 +40,14 @@ const KpiCard = ({ icon: Icon, iconBg, label, value }) => (
 /* ── Status chip with icon ── */
 const StatusChip = ({ status }) => {
   const map = {
-    1: { icon: CheckCircle2, label: 'In Progress', color: 'text-blue-600', bg: 'bg-blue-50' },
-    2: { icon: CheckCircle2, label: 'Completed',   color: 'text-green-600', bg: 'bg-green-50' },
-    3: { icon: AlertCircle,  label: 'Pending',     color: 'text-yellow-600', bg: 'bg-yellow-50' },
-    4: { icon: XCircle,      label: 'Disable',     color: 'text-red-500',   bg: 'bg-red-50' },
-    5: { icon: CheckCircle2, label: 'Done',        color: 'text-purple-600', bg: 'bg-purple-50' },
+    1: { icon: Clock,        label: 'Not Started',     color: 'text-gray-500',   bg: 'bg-gray-50' },
+    2: { icon: AlertCircle,  label: 'Action Required', color: 'text-orange-600', bg: 'bg-orange-50' },
+    3: { icon: CheckCircle2, label: 'In Process',      color: 'text-blue-600',   bg: 'bg-blue-50' },
+    4: { icon: CheckCircle2, label: 'Completed',       color: 'text-green-600',  bg: 'bg-green-50' },
+    5: { icon: AlertCircle,  label: 'On Hold',         color: 'text-yellow-600', bg: 'bg-yellow-50' },
+    6: { icon: XCircle,      label: 'Dropped',         color: 'text-gray-500',   bg: 'bg-gray-50' },
+    7: { icon: XCircle,      label: 'Cancelled',       color: 'text-red-500',    bg: 'bg-red-50' },
+    8: { icon: XCircle,      label: 'Expired',         color: 'text-red-600',    bg: 'bg-red-50' },
   };
   const cfg = map[status] || { icon: AlertCircle, label: 'Unknown', color: 'text-gray-500', bg: 'bg-gray-50' };
   const Icon = cfg.icon;
@@ -66,7 +72,7 @@ const ProgressBar = ({ value = 60 }) => (
 );
 
 /* ── Progress per status ── */
-const statusProgress = { 1: 40, 2: 100, 3: 20, 4: 0, 5: 100 };
+const statusProgress = { 1: 0, 2: 20, 3: 60, 4: 100, 5: 50, 6: 0, 7: 0, 8: 0 };
 
 /* ══════════════════════════════════════════
    Main component
@@ -170,10 +176,8 @@ const MyIndividualservices = () => {
       counts[label] = (counts[label] || 0) + 1;
     });
     return [
-      { key: 'ALL',         label: 'All Orders'  },
-      { key: 'In Progress', label: 'In Progress' },
-      { key: 'Completed',   label: 'Completed'   },
-      { key: 'Pending',     label: 'Pending'     },
+      { key: 'ALL', label: 'All Orders' },
+      ...orderStatusList.map(s => ({ key: s.label, label: s.label })),
     ].map(tab => ({ ...tab, count: counts[tab.key] || 0 }));
   }, [individualServices]);
 

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getServiceById, getServicePrice } from "../api/ServicesApi";
 import { upsertQuote } from "../api/Quote";
 import { getSecureItem } from "../utils/secureStorage";
+import { fetchFranchiseeGstInfo, calcGstAmount, splitGst } from "../utils/gstCalc";
 import { getAllStates } from "../api/States";
 import SigninModal from "../components/Modals/SigninModal";
 import { motion, AnimatePresence } from "framer-motion";
@@ -199,23 +200,36 @@ const ServiceDetails = () => {
 
       // Build ServiceDetails for this service only
       const priceObj = cart[service?.ServiceID] || price || {};
+      const professionalFee = Number(priceObj.ProfessionalFee ?? 100);
+      const vendorFee = Number(priceObj.VendorFee ?? 100);
+      const govtFee = Number(priceObj.GovernmentFee ?? 100);
+      const contractorFee = Number(priceObj.ContractFee ?? 100);
+      const discount = Number(priceObj.Discount ?? 0);
+      const rounding = Number(priceObj.Rounding ?? 0);
+
+      const { gstEligible, state: franchiseeState } = await fetchFranchiseeGstInfo(franchiseeId);
+      const gstAmount = calcGstAmount(professionalFee, vendorFee, gstEligible);
+      const { cgst, sgst, igst } = splitGst(gstAmount, franchiseeState, stateName);
+      const total = professionalFee + vendorFee + govtFee + contractorFee - discount + gstAmount;
+      const advanceAmount = Math.ceil(total * 0.3);
+
       const serviceDetails = [
         {
           ServiceID: service?.ServiceID,
           ItemName: service?.ServiceName || service?.Name,
-          ProfessionalFee: priceObj.ProfessionalFee ?? 100,
-          VendorFee: priceObj.VendorFee ?? 100,
-          GovtFee: priceObj.GovtFee ?? 100,
-          ContractorFee: priceObj.ContractorFee ?? 100,
-          GSTPercent: priceObj.GSTPercent ?? 0,
-          GstAmount: priceObj.GstAmount ?? 18,
-          CGST: priceObj.CGST ?? 9,
-          SGST: priceObj.SGST ?? 9,
-          IGST: priceObj.IGST ?? 0,
-          Discount: priceObj.Discount ?? 0,
-          Rounding: priceObj.Rounding ?? 0,
-          Total: priceObj.TotalFee ?? (typeof priceObj === 'number' ? priceObj : 418),
-          AdvanceAmount: priceObj.AdvanceAmount ?? 126,
+          ProfessionalFee: professionalFee,
+          VendorFee: vendorFee,
+          GovtFee: govtFee,
+          ContractorFee: contractorFee,
+          GSTPercent: gstEligible ? 18 : 0,
+          GstAmount: gstAmount,
+          CGST: cgst,
+          SGST: sgst,
+          IGST: igst,
+          Discount: discount,
+          Rounding: rounding,
+          Total: total,
+          AdvanceAmount: advanceAmount,
           IsManual: 0,
           IsIndividual: 1
         }

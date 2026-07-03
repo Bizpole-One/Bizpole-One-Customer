@@ -86,7 +86,8 @@ const DashboardLayout = () => {
             loadQuotesForCompany(targetCompany);
             setSecureItem("selectedCompany", JSON.stringify({
               CompanyID: targetCompany.CompanyID,
-              CompanyName: targetCompany.BusinessName
+              CompanyName: targetCompany.BusinessName,
+              State: targetCompany.State || ""
             }));
           }
         }
@@ -123,7 +124,8 @@ const DashboardLayout = () => {
     loadQuotesForCompany(company);
     setSecureItem("selectedCompany", JSON.stringify({
       CompanyID: company.CompanyID,
-      CompanyName: company.BusinessName
+      CompanyName: company.BusinessName,
+      State: company.State || ""
     }));
     setShowCompanyDropdown(false);
   };
