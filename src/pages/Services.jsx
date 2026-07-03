@@ -6,6 +6,7 @@ import { upsertQuote } from "../api/Quote";
 import { getSecureItem } from "../utils/secureStorage";
 import ServicesApi from "../api/ServicesApi";
 import axios from "../api/axiosInstance";
+import { fetchFranchiseeGstInfo, calcGstAmount, splitGst } from "../utils/gstCalc";
 import { motion, AnimatePresence } from "framer-motion";
 import SigninModal from "../components/Modals/SigninModal";
 
@@ -211,23 +212,36 @@ const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSele
                     TotalFee: 0,
                     AdvanceAmount: 0
                   };
+                  const professionalFee = Number(priceObj.ProfessionalFee ?? 0);
+                  const vendorFee = Number(priceObj.VendorFee ?? 0);
+                  const govtFee = Number(priceObj.GovernmentFee ?? 0);
+                  const contractorFee = Number(priceObj.ContractFee ?? 0);
+                  const discount = Number(priceObj.Discount ?? 0);
+                  const rounding = Number(priceObj.Rounding ?? 0);
+
+                  const { gstEligible, state: franchiseeState } = await fetchFranchiseeGstInfo(franchiseeId);
+                  const gstAmount = calcGstAmount(professionalFee, vendorFee, gstEligible);
+                  const { cgst, sgst, igst } = splitGst(gstAmount, franchiseeState, stateName);
+                  const total = professionalFee + vendorFee + govtFee + contractorFee - discount + gstAmount;
+                  const advanceAmount = Math.ceil(total * 0.3);
+
                   const serviceDetails = [
                     {
                       ServiceID: service?.ServiceID,
                       ItemName: service?.ServiceName,
-                      ProfessionalFee: priceObj.ProfessionalFee ?? 100,
-                      VendorFee: priceObj.VendorFee ?? 100,
-                      GovtFee: priceObj.GovtFee ?? 100,
-                      ContractorFee: priceObj.ContractorFee ?? 100,
-                      GSTPercent: priceObj.GSTPercent ?? 0,
-                      GstAmount: priceObj.GstAmount ?? 18,
-                      CGST: priceObj.CGST ?? 9,
-                      SGST: priceObj.SGST ?? 9,
-                      IGST: priceObj.IGST ?? 0,
-                      Discount: priceObj.Discount ?? 0,
-                      Rounding: priceObj.Rounding ?? 0,
-                      Total: priceObj.TotalFee ?? (typeof priceObj === 'number' ? priceObj : 418),
-                      AdvanceAmount: priceObj.AdvanceAmount ?? 126,
+                      ProfessionalFee: professionalFee,
+                      VendorFee: vendorFee,
+                      GovtFee: govtFee,
+                      ContractorFee: contractorFee,
+                      GSTPercent: gstEligible ? 18 : 0,
+                      GstAmount: gstAmount,
+                      CGST: cgst,
+                      SGST: sgst,
+                      IGST: igst,
+                      Discount: discount,
+                      Rounding: rounding,
+                      Total: total,
+                      AdvanceAmount: advanceAmount,
                       IsManual: 0,
                       IsIndividual: 1
                     }
@@ -711,6 +725,8 @@ const Services = () => {
 
                           // Use CartContext for selected services and prices
                           const selectedServiceIds = Object.keys(cart).map(Number);
+                          // GST eligibility/state is per-franchisee, fetch once for the whole cart.
+                          const { gstEligible, state: franchiseeState } = await fetchFranchiseeGstInfo(franchiseeId);
                           // Build ServiceDetails from cart
                           const serviceDetails = selectedServiceIds.map(sid => {
                             let svc = services.find(s => s.ServiceID === sid);
@@ -723,22 +739,32 @@ const Services = () => {
                               }
                             }
                             const price = cart[sid] || {};
+                            const professionalFee = Number(price.ProfessionalFee ?? 100);
+                            const vendorFee = Number(price.VendorFee ?? 100);
+                            const govtFee = Number(price.GovernmentFee ?? 100);
+                            const contractorFee = Number(price.ContractFee ?? 100);
+                            const discount = Number(price.Discount ?? 0);
+                            const rounding = Number(price.Rounding ?? 0);
+                            const gstAmount = calcGstAmount(professionalFee, vendorFee, gstEligible);
+                            const { cgst, sgst, igst } = splitGst(gstAmount, franchiseeState, stateName);
+                            const total = professionalFee + vendorFee + govtFee + contractorFee - discount + gstAmount;
+                            const advanceAmount = Math.ceil(total * 0.3);
                             return {
                               ServiceID: svc?.ServiceID,
                               ItemName: svc?.ServiceName,
-                              ProfessionalFee: price.ProfessionalFee ?? 100,
-                              VendorFee: price.VendorFee ?? 100,
-                              GovtFee: price.GovtFee ?? 100,
-                              ContractorFee: price.ContractorFee ?? 100,
-                              GSTPercent: price.GSTPercent ?? 0,
-                              GstAmount: price.GstAmount ?? 18,
-                              CGST: price.CGST ?? 9,
-                              SGST: price.SGST ?? 9,
-                              IGST: price.IGST ?? 0,
-                              Discount: price.Discount ?? 0,
-                              Rounding: price.Rounding ?? 0,
-                              Total: price.TotalFee ?? (typeof price === 'number' ? price : 418),
-                              AdvanceAmount: price.AdvanceAmount ?? 126,
+                              ProfessionalFee: professionalFee,
+                              VendorFee: vendorFee,
+                              GovtFee: govtFee,
+                              ContractorFee: contractorFee,
+                              GSTPercent: gstEligible ? 18 : 0,
+                              GstAmount: gstAmount,
+                              CGST: cgst,
+                              SGST: sgst,
+                              IGST: igst,
+                              Discount: discount,
+                              Rounding: rounding,
+                              Total: total,
+                              AdvanceAmount: advanceAmount,
                               IsManual: 0,
                               IsIndividual: 1
                             };
