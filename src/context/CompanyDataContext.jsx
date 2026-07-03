@@ -50,6 +50,7 @@ export const CompanyDataProvider = ({ children }) => {
           setSecureItem('selectedCompany', JSON.stringify({
             CompanyID: targetCompany.CompanyID,
             CompanyName: targetCompany.BusinessName || targetCompany.CompanyName,
+            State: targetCompany.State || "",
           }));
           setSecureItem('CompanyId', targetCompany.CompanyID.toString());
         }
@@ -135,6 +136,7 @@ export const CompanyDataProvider = ({ children }) => {
       setSecureItem('selectedCompany', JSON.stringify({
         CompanyID: company.CompanyID,
         CompanyName: company.BusinessName || company.CompanyName,
+        State: company.State || "",
       }));
       setSecureItem('CompanyId', company.CompanyID.toString());
     }
