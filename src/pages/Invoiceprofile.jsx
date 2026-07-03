@@ -6,7 +6,8 @@ import {
   FiPlus,
   FiMinus,
   FiX,
-  FiAlertCircle
+  FiAlertCircle,
+  FiDownload
 } from 'react-icons/fi';
 import { getCompanyInvoices } from '../api/Companyinvoice';
 import CryptoJS from "crypto-js";
@@ -22,6 +23,7 @@ const InvoiceProfile = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [showFullInvoice, setShowFullInvoice] = useState(false);
   const [stats, setStats] = useState({
     totalInvoices: 0,
     totalAmount: 0,
@@ -97,6 +99,7 @@ const InvoiceProfile = () => {
 
   const handleViewInvoice = (invoice) => {
     setSelectedInvoice(invoice);
+    setShowFullInvoice(false);
   };
 
   const handleOpenFullPreview = (invoice) => {
@@ -197,7 +200,7 @@ const InvoiceProfile = () => {
   const nextInvoice = getNextInvoice();
 
   return (
-    <div className=" bg-white">
+    <div>
       <div className="mx-auto px-6 py-10">
         {/* Heading */}
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Invoice</h1>
@@ -211,9 +214,8 @@ const InvoiceProfile = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`relative pb-3 text-sm font-medium transition-colors ${
-                activeTab === tab.id ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'
-              }`}
+              className={`relative pb-3 text-sm font-medium transition-colors ${activeTab === tab.id ? 'text-gray-900' : 'text-gray-400 hover:text-gray-600'
+                }`}
             >
               {tab.label}
               {activeTab === tab.id && (
@@ -327,10 +329,10 @@ const InvoiceProfile = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="flex gap-6"
+              className="flex items-start gap-6" style={{ alignItems: 'flex-start' }}
             >
               {/* Table */}
-              <div className={`border border-gray-200 rounded-xl overflow-hidden transition-all ${selectedInvoice ? 'w-full lg:w-1/2' : 'w-full'}`}>
+              <div className={`border border-gray-200 rounded-xl overflow-hidden transition-all ${selectedInvoice ? 'w-full lg:flex-1' : 'w-full'}`}>
                 {loading ? (
                   <div className="p-12 text-center">
                     <div className="inline-block w-8 h-8 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin mb-3"></div>
@@ -369,9 +371,8 @@ const InvoiceProfile = () => {
                           <tr
                             key={invoice.InvoiceID || invoice.id || index}
                             onClick={() => handleViewInvoice(invoice)}
-                            className={`border-b border-gray-100 last:border-0 cursor-pointer transition-colors ${
-                              isSelected ? 'bg-yellow-50/60' : 'hover:bg-gray-50'
-                            }`}
+                            className={`border-b border-gray-100 last:border-0 cursor-pointer transition-colors ${isSelected ? 'bg-yellow-50/60' : 'hover:bg-gray-50'
+                              }`}
                           >
                             <td className={`py-3.5 px-5 ${status.toLowerCase() === 'upcoming' || status.toLowerCase() === 'pending' ? 'text-yellow-600 font-medium' : 'text-gray-700'}`}>
                               {formatDate(invoice.InvoiceDate || invoice.invoiceDate)}
@@ -403,16 +404,25 @@ const InvoiceProfile = () => {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
                     transition={{ duration: 0.2 }}
-                    className="hidden lg:flex flex-col w-1/2 border border-gray-200 rounded-xl p-6"
+                    className="hidden lg:flex flex-col w-[320px] flex-shrink-0 border border-gray-200 rounded-xl p-6 min-h-[600px]"
                   >
-                    <div className="flex items-start justify-between mb-5">
+                    <div className="flex items-start justify-between mb-5 pb-5 border-b border-gray-200">
                       <div>
-                        <h3 className="text-sm font-medium text-gray-900">
-                          {selectedInvoice.InvoiceCode || selectedInvoice.invoiceCode || 'Monthly invoice'}
-                        </h3>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {selectedInvoice.InvoiceStatus || selectedInvoice.Status || 'Unknown'}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-medium text-gray-900">
+                            Monthly invoice
+                          </h3>
+                          {showFullInvoice && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(selectedInvoice.InvoiceStatus || selectedInvoice.Status)}`}>
+                              {selectedInvoice.InvoiceStatus || selectedInvoice.Status || 'Unknown'}
+                            </span>
+                          )}
+                        </div>
+                        {showFullInvoice && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Invoice date: {formatDate(selectedInvoice.InvoiceDate || selectedInvoice.OrderDate)}
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => setSelectedInvoice(null)}
@@ -422,7 +432,7 @@ const InvoiceProfile = () => {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 mb-5 pb-5 border-b border-gray-100">
+                    <div className="grid grid-cols-2 gap-4 mb-5 pb-5 border-b border-gray-200">
                       <div>
                         <p className="text-xs text-gray-400 mb-1">Due date</p>
                         <p className="text-sm font-medium text-gray-900">
@@ -435,39 +445,105 @@ const InvoiceProfile = () => {
                           {selectedInvoice.InvoiceStatus || selectedInvoice.Status || 'Unknown'}
                         </p>
                       </div>
+                      {showFullInvoice && (
+                        <>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-1">Invoice number</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {selectedInvoice.InvoiceNumber || selectedInvoice.InvoiceCode || '-'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-1">Payment method</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {selectedInvoice.PaymentMethod || '-'}
+                            </p>
+                          </div>
+                        </>
+                      )}
                     </div>
 
-                    <div className="mb-5 pb-5 border-b border-gray-100">
-                      <p className="text-sm font-medium text-gray-900 mb-1">Renewing monthly</p>
+                    <div className="mb-5 pb-5 border-b border-gray-200">
+                      <p className="text-sm font-medium text-gray-900 mb-1">
+                        {showFullInvoice ? 'Renewing monthly seats' : 'Renewing monthly'}
+                      </p>
                       <p className="text-xs text-gray-400">
-                        Assigned monthly that will renew for {formatDate(selectedInvoice.InvoiceDate || selectedInvoice.OrderDate)}
+                        Assigned monthly {showFullInvoice ? 'seats that renewed' : 'that will renew'} for {formatDate(selectedInvoice.InvoiceDate || selectedInvoice.OrderDate)}
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between mb-2 text-sm">
-                      <span className="text-gray-600">
-                        {selectedInvoice.CompanyName || selectedInvoice.companyName || 'Company'}
-                      </span>
-                      <span className="font-medium text-gray-900">
-                        {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
-                      </span>
+                    <div className="space-y-2 mb-5 pb-5 border-b border-gray-200 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">1 Full</span>
+                        <span className="text-gray-900">
+                          {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">0 {showFullInvoice ? 'Dev' : 'View'}</span>
+                        <span className="text-gray-900">₹0.00</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">0 Collab</span>
+                        <span className="text-gray-900">₹0.00</span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                      <span className="text-sm font-medium text-gray-900">Projected subtotal</span>
-                      <span className="text-sm font-semibold text-gray-900">
-                        {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
-                      </span>
-                    </div>
+                    {!showFullInvoice ? (
+                      <>
+                        <div className="flex items-center justify-between mb-5">
+                          <span className="text-sm font-medium text-gray-900">Projected subtotal</span>
+                          <span className="text-sm font-semibold text-gray-900">
+                            {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
+                          </span>
+                        </div>
+                        <div className="flex items-start gap-2 p-3 rounded-lg bg-[#E4ECFF]">
+                          <FiAlertCircle className="w-4 h-4 text-[#1E2746] mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-[#1E2746]">
+                            Upgrade to an annual plan for a{' '}
+                            <span className="underline cursor-pointer">20% discount</span>
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-2 mb-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">Subtotal</span>
+                          <span className="text-gray-900">
+                            {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">Taxes</span>
+                          <span className="text-gray-900">₹0.00</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                          <span className="text-sm font-medium text-gray-900">Total</span>
+                          <span className="text-sm font-semibold text-gray-900">
+                            {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
-                    <div className="flex-1" />
+                    <div className="flex-1"  />
 
-                    <button
-                      onClick={() => handleOpenFullPreview(selectedInvoice)}
-                      className="w-full border border-gray-300 rounded-md py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors mt-6"
-                    >
-                      Manage
-                    </button>
+                    {!showFullInvoice ? (
+                      <button
+                        onClick={() => setShowFullInvoice(true)}
+                        className="w-full border border-gray-300 rounded-md py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors mt-6"
+                      >
+                        Manage
+                      </button>
+                    ) : (
+                      <button
+                        // onClick={() => handleOpenFullPreview(selectedInvoice)}
+                        className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors mt-6"
+                      >
+                        <FiDownload className="w-4 h-4" />
+                        Download PDF
+                      </button>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
