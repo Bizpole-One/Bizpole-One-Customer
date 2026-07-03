@@ -106,6 +106,7 @@ const upcomingTasks = [
 
 const STATUS_FILTERS = ["All", "Approved", "In review", "Not Approved", "Disable"];
 
+
 export default function ServiceSelection() {
   const location = useLocation();
   const navState = location.state || {};
@@ -142,6 +143,31 @@ export default function ServiceSelection() {
 
 
   const [companyId, setCompanyId] = useState(() => getSecureItem("selectedCompany")?.CompanyID || null);
+
+  const [activeFormTask, setActiveFormTask] = useState(null); // task currently open in modal
+
+  // Add more task types here as you build them out — same shape as "Bank"
+  const TASK_FORM_CONFIGS = {
+    "Bank details": {
+      title: "Bank",
+      rejectionMessage:
+        "Important: The bank details you submitted could not be verified. Kindly provide the information as outlined below.",
+      fields: [
+        { type: "text", name: "accountNumber", label: "Account Number", required: true, colSpan: 1 },
+        { type: "select", name: "branchCode", label: "Branch code", required: true, options: [], colSpan: 1 },
+        { type: "file", name: "accountBook", label: "Account Book", required: false, colSpan: 1 },
+        { type: "select", name: "ifscCode", label: "IFSC code", required: true, options: [], colSpan: 1 },
+      ],
+    },
+  };
+
+  const getFormConfigForTask = (task) =>
+    TASK_FORM_CONFIGS[task?.title] || {
+      title: task?.title || "Task",
+      fields: [
+        { type: "text", name: "value", label: task?.title || "Details", required: true, colSpan: 2 },
+      ],
+    };
 
   // Clear invalid selectedCompany format
   useEffect(() => {
@@ -193,6 +219,8 @@ export default function ServiceSelection() {
       if (found && (!selectedService || selectedService.ServiceDetailID !== found.ServiceDetailID)) {
         setSelectedService(found);
       }
+    } else if (!navServiceId && !selectedService && companyServices?.services?.length > 0) {
+      setSelectedService(companyServices.services[0]);
     }
   }, [navServiceId, companyServices, selectedService]);
 
@@ -330,13 +358,13 @@ export default function ServiceSelection() {
   const getStatusStyles = (status) => {
     switch (status) {
       case "Approved":
-        return "bg-green-100 text-green-600";
+        return "bg-green-50 text-green-500";
       case "In review":
-        return "bg-orange-100 text-orange-500";
+        return "bg-orange-50 text-orange-500";
       case "Not Approved":
-        return "bg-red-100 text-red-500";
+        return "bg-red-50 text-red-500";
       default:
-        return "bg-gray-100 text-gray-500";
+        return "bg-gray-50 text-gray-500";
     }
   };
 
@@ -388,22 +416,32 @@ export default function ServiceSelection() {
   const startDate = summary?.assignedAt ?? summary?.startDate ?? "-";
   const paymentDue =
     summary?.paymentDue !== undefined && summary?.paymentDue !== null ? `₹${summary.paymentDue}` : "-";
-  const overallPercent = summary?.percentComplete ?? 0;
-  const overallStatusLabel = approvalStatus || summary?.status || "In Progress";
+  const rawPercent = summary?.percentComplete ?? 0;
+  const overallPercent = Math.min(
+    100,
+    Math.max(0, parseFloat(String(rawPercent).replace("%", "")) || 0)
+  );
+  const overallStatusLabel = "In Progress";
 
   // ---------- Reusable task row ----------
   const TaskRow = ({ task, disabled }) => (
     <div
-      className={`grid grid-cols-[24px_1fr_120px_110px_150px_150px] items-center gap-4 py-2.5 border-b border-gray-50 last:border-b-0`}
+      className={`grid grid-cols-[24px_1fr_120px_110px_150px_150px] items-center gap-4 py-3 ${disabled ? "" : "cursor-pointer hover:bg-gray-50 rounded-lg"
+        }`}
+      onClick={() => {
+        if (!disabled) setActiveFormTask(task);
+      }}
     >
       <div className="flex justify-center">
         {task.completed ? (
-          <span className="w-4 h-4 rounded-full bg-yellow-400 flex items-center justify-center text-white text-[10px]">
-            ✓
+          <span className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
           </span>
         ) : (
           <span
-            className={`w-4 h-4 rounded-full border-2 block ${disabled ? "border-gray-200" : "border-gray-300"}`}
+            className={`w-5 h-5 rounded-full border-2 block ${disabled ? "border-gray-200" : "border-gray-300"}`}
           />
         )}
       </div>
@@ -449,14 +487,13 @@ export default function ServiceSelection() {
               />
             ) : (
               <span
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-semibold flex-shrink-0 ${
-                  disabled ? "bg-gray-100 text-gray-300" : "bg-yellow-100 text-yellow-700"
-                }`}
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-semibold flex-shrink-0 ${disabled ? "bg-gray-100 text-gray-300" : "bg-yellow-100 text-yellow-700"
+                  }`}
               >
                 {getInitials(task.assignee.name)}
               </span>
             )}
-            <span className={`text-xs truncate ${disabled ? "text-gray-300" : "text-gray-600"}`}>
+            <span className={`text-sm truncate ${disabled ? "text-gray-300" : "text-gray-700"}`}>
               {task.assignee.name}
             </span>
           </>
@@ -583,11 +620,144 @@ export default function ServiceSelection() {
           )}
           <button
             type="submit"
-            className="bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-semibold px-6 py-2 rounded-lg shadow w-full"
+            className="bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-semibold px-6 py-2 rounded-lg
+             shadow w-full"
           >
             Submit Data
           </button>
         </form>
+      </div>
+    );
+  };
+
+  const TaskFormModal = ({ task, onClose }) => {
+    const config = getFormConfigForTask(task);
+    const [values, setValues] = useState({});
+
+    const handleChange = (name, val) => setValues((v) => ({ ...v, [name]: val }));
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      // TODO: wire to real submit endpoint per task type
+      onClose();
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl border border-gray-100">
+          <div className="px-8 pt-6 pb-4 border-b-2 border-yellow-400 flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">{config.title}</h2>
+            {task.status === "Not Approved" && (
+              <span className="text-xs font-medium text-red-500 bg-red-50 border border-dashed border-red-300 px-3 py-1 rounded-full underline decoration-dotted decoration-red-400 underline-offset-2">
+                Not Approved
+              </span>
+            )}
+          </div>
+
+          <form onSubmit={handleSubmit} className="px-8 py-6">
+            {task.status === "Not Approved" && config.rejectionMessage && (
+              <div className="mb-6 text-sm text-gray-700 leading-relaxed">
+                {config.rejectionMessage}
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+              {config.fields.map((field) => (
+                <div key={field.name} className={field.colSpan === 2 ? "md:col-span-2" : ""}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-sm text-gray-700">{field.label}</label>
+                    <span className="w-4 h-4 rounded-full border border-red-300 text-red-400 text-[10px] flex items-center justify-center">
+                      i
+                    </span>
+                  </div>
+
+                  {field.type === "text" && (
+                    <input
+                      type="text"
+                      value={values[field.name] || ""}
+                      onChange={(e) => handleChange(field.name, e.target.value)}
+                      required={field.required}
+                      className="w-full border border-yellow-400 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    />
+                  )}
+
+                  {field.type === "select" && (
+                    <select
+                      value={values[field.name] || ""}
+                      onChange={(e) => handleChange(field.name, e.target.value)}
+                      required={field.required}
+                      className="w-full border border-yellow-400 rounded-lg px-3 py-2.5 text-sm text-gray-500 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    >
+                      <option value="">Select an option...</option>
+                      {(field.options || []).map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {field.type === "file" && (
+                    <div>
+                      <label className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-500 text-gray-800 text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer w-fit">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        {values[field.name] ? "Change File" : "Upload Files"}
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => handleChange(field.name, e.target.files[0])}
+                        />
+                      </label>
+
+                      {values[field.name] && (
+                        <div className="flex items-center gap-2 mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 w-fit max-w-full">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600 flex-shrink-0">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                            <polyline points="22 4 12 14.01 9 11.01" />
+                          </svg>
+                          <span className="text-xs text-green-700 truncate max-w-[180px]">
+                            {values[field.name].name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleChange(field.name, null)}
+                            className="text-green-500 hover:text-green-700 flex-shrink-0"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="18" y1="6" x2="6" y2="18" />
+                              <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-gray-400 mt-1.5">{field.required ? "Required" : ""}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-8">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 rounded-full text-sm font-medium text-gray-500 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="bg-yellow-400 hover:bg-yellow-500 text-white text-sm font-semibold px-6 py-2 rounded-lg shadow-sm"
+              >
+                SUBMIT
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     );
   };
@@ -674,7 +844,7 @@ export default function ServiceSelection() {
         <div className="relative">
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="bg-yellow-400 hover:bg-[#F3C625] text-gray-800 text-base font-medium pl-5 pr-4 py-2.5 rounded-full shadow-sm flex items-center gap-2"
+            className="bg-yellow-400 hover:bg-[#F3C625] text-white text-base font-small pl-5 pr-4 py-2.5 rounded-lg shadow-sm flex items-center gap-2"
           >
             <span>{selectedService?.ItemName || "Choose Services"}</span>
             <span className="w-5 h-5 bg-white rounded-full flex items-center justify-center text-gray-600 text-[10px] font-semibold">
@@ -701,9 +871,8 @@ export default function ServiceSelection() {
                         setSelectedService(s);
                         setIsDropdownOpen(false);
                       }}
-                      className={`flex items-center p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0 ${
-                        selectedService?.ServiceDetailID === s.ServiceDetailID ? "bg-yellow-100" : ""
-                      }`}
+                      className={`flex items-center p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0 ${selectedService?.ServiceDetailID === s.ServiceDetailID ? "bg-yellow-100" : ""
+                        }`}
                     >
                       <span className="text-2xl mr-3">🛠️</span>
                       <div>
@@ -724,52 +893,67 @@ export default function ServiceSelection() {
       </div>
 
       {/* Summary card */}
-    <div className="mb-4">
-  {selectedService?.ItemName && (
-    <h2 className="text-base font-semibold text-gray-800 mb-3">{selectedService.ItemName}</h2>
-  )}
+      {companyServices && companyServices.services?.length === 0 ? null : (
+        <div className="mb-4 p-8 border-b border-[#F3C625]">
+          {selectedService?.ItemName && (
+            <h2 className="text-base font-semibold text-gray-800 mb-3">{selectedService.ItemName}</h2>
+          )}
 
-  {loadingTasks ? (
-    <div className="py-4 text-gray-500">Loading summary...</div>
-  ) : tasksError ? (
-    <div className="py-4 text-red-500">{tasksError}</div>
-  ) : (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-      <div>
-        <p className="text-xs text-gray-500 mb-1.5">Total Tasks Completed</p>
-        <p className="text-base font-semibold text-gray-800">{totalTasksCompleted}</p>
-      </div>
-      <div>
-        <p className="text-xs text-gray-500 mb-1.5">Start Date</p>
-        <p className="text-base font-semibold text-gray-800">{startDate}</p>
-      </div>
-      <div>
-        <p className="text-xs text-gray-500 mb-1.5">payment Due</p>
-        <p className="text-base font-semibold text-gray-800">{paymentDue}</p>
-      </div>
-      <div>
-        <p className="text-xs text-gray-500 mb-1.5">Status</p>
-        <div className="flex items-center gap-1.5">
-          <div className="relative w-24 h-5 rounded-full bg-gray-100 overflow-hidden flex items-center">
-            <div
-              className="absolute left-0 top-0 h-full bg-yellow-400 rounded-full"
-              style={{ width: `${overallPercent}%` }}
-            />
-            <span className="relative z-10 pl-2 text-[10px] font-semibold text-white whitespace-nowrap">
-              {overallStatusLabel}
-            </span>
-          </div>
-          <span className="text-xs text-gray-400">/</span>
-          <span className="text-xs font-semibold text-gray-800">{overallPercent}%</span>
+          {loadingTasks ? (
+            <div className="py-4 text-gray-500">Loading summary...</div>
+          ) : tasksError ? (
+            <div className="py-4 text-red-500">{tasksError}</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">Total Tasks Completed</p>
+                <p className="text-base font-semibold text-gray-800">{totalTasksCompleted}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">Start Date</p>
+                <p className="text-base font-semibold text-gray-800">{startDate}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">Payment Due</p>
+                <p className="text-base font-semibold text-gray-800">{paymentDue}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">Status</p>
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="relative h-4 rounded-full bg-gray-100 overflow-hidden flex-shrink-0"
+                    style={{ width: "150px" }}
+                  >
+                    <div className="absolute inset-0 flex items-center px-3">
+                      <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                        {overallStatusLabel} / {overallPercent}%
+                      </span>
+                    </div>
+                    <div
+                      className="absolute inset-y-0 left-0 bg-yellow-400 rounded-full transition-all"
+                      style={{ width: `${overallPercent}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 left-0 overflow-hidden transition-all"
+                      style={{ width: `${overallPercent}%` }}
+                    >
+                      <div className="h-full flex items-center px-3" style={{ width: "150px" }}>
+                        <span className="text-[11px] font-semibold text-white whitespace-nowrap">
+                          {overallStatusLabel} / {overallPercent}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
-    </div>
-  )}
-</div>
+      )}
 
       {/* Navigation Tabs */}
-      <div className="border-t border-[#F3C625] mt-8 mb-6">
-        <div className="flex items-center justify-between mt-6">
+      <div className=" mt-8 mb-6 border border-gray-200 rounded-xl">
+        <div className="flex items-center justify-between p-2">
           <div className="flex space-x-8">
             {["Task", "Documents", "Deliverables"].map((tab) => (
               <button
@@ -779,11 +963,10 @@ export default function ServiceSelection() {
                   setCollectDataTask(null);
                   setNoteTask(null);
                 }}
-                className={`pb-3 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab && !collectDataTask && !noteTask
-                    ? "border-yellow-400 text-yellow-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700"
-                }`}
+                className={`pb-3 px-1  font-medium text-sm ${activeTab === tab && !collectDataTask && !noteTask
+                  ? "border-yellow-400 text-yellow-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
               >
                 {tab}
               </button>
@@ -818,9 +1001,8 @@ export default function ServiceSelection() {
                         setStatusFilter(s);
                         setIsStatusDropdownOpen(false);
                       }}
-                      className={`px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 ${
-                        statusFilter === s ? "text-yellow-600 font-medium" : "text-gray-600"
-                      }`}
+                      className={`px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 ${statusFilter === s ? "text-yellow-600 font-medium" : "text-gray-600"
+                        }`}
                     >
                       {s}
                     </div>
@@ -837,17 +1019,18 @@ export default function ServiceSelection() {
         <CollectDataForm task={collectDataTask} onBack={() => setCollectDataTask(null)} />
       ) : noteTask ? (
         <NoteForm task={noteTask} onBack={() => setNoteTask(null)} />
+      ) : companyServices && companyServices.services?.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-10 mb-8 text-center text-gray-500 text-sm">
+          No task
+        </div>
       ) : activeTab === "Task" ? (
         <div className="mb-10">
           {/* Current Task */}
           <div className="mb-10">
             <h3 className="text-base font-semibold text-gray-800 mb-3">Current Task</h3>
-            <div className="text-xs font-medium text-yellow-500 border-b-2 border-yellow-400 inline-block pb-2 mb-2">
-              All
-            </div>
-            <div className="grid grid-cols-[24px_1fr_120px_110px_150px_150px] gap-4 pb-2 mb-1 text-xs font-medium text-gray-400 border-b border-gray-100">
+            <div className="grid grid-cols-[24px_1fr_120px_110px_150px_150px] gap-4 pb-3 mb-1 text-sm font-normal text-gray-400  border-b border-gray-200">
               <div />
-              <div>Task</div>
+              <div>All</div>
               <div>Status</div>
               <div>Date</div>
               <div>Progress</div>
@@ -902,8 +1085,8 @@ export default function ServiceSelection() {
           </div>
         </div>
       ) : activeTab === "Documents" ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Documents</h3>
+        <div className="bg-white rounded-lg p-8 mb-8">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Uploaded</h3>
           {loadingDocuments && <p className="text-gray-600">Loading documents...</p>}
           {documentsError && <p className="text-red-500">{documentsError}</p>}
           {!loadingDocuments && !documentsError && verifiedFields.length > 0 && (
@@ -950,7 +1133,7 @@ export default function ServiceSelection() {
           )}
         </div>
       ) : activeTab === "Deliverables" ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8">
+        <div className="bg-white rounded-lg  p-8 mb-8">
           <h3 className="text-lg font-semibold text-gray-800 mb-6">Uploaded</h3>
           {loadingDeliverables && <p className="text-gray-600">Loading deliverables...</p>}
           {deliverablesError && <p className="text-red-500">{deliverablesError}</p>}
@@ -999,13 +1182,13 @@ export default function ServiceSelection() {
           {!loadingDeliverables && !deliverablesError && Array.isArray(serviceDeliverables) && serviceDeliverables.length === 0 && (
             <p className="text-gray-600">No deliverables available yet.</p>
           )}
+
         </div>
       ) : null}
 
-      {/* Fixed Chat Button */}
-      <button className="fixed bottom-6 right-6 bg-yellow-400 hover:bg-yellow-500 text-gray-800 text-sm font-semibold px-7 py-3 rounded-full shadow-lg">
-        CHAT
-      </button>
+      {activeFormTask && (
+        <TaskFormModal task={activeFormTask} onClose={() => setActiveFormTask(null)} />
+      )}
     </div>
   );
 }
