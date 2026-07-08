@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   getCompanyServices,
   getServiceDeliverablesByServiceDetailId,
@@ -9,100 +9,101 @@ import {
 import { serviceFormMapping } from "../api/Services/ServiceDetails";
 import { useLocation } from "react-router-dom";
 import ServiceTaskListing from "../../src/components/associate/ServiceTaskListing";
+import ServiceTaskForm from "../../src/components/associate/ServiceTaskForm";
 import { getSecureItem, removeSecureItem } from "../utils/secureStorage";
 
 // Mock data (keep as fallback so the table always has something to render
 // while real per-task data is wired up on the backend)
-const currentTasks = [
-  {
-    id: 1,
-    title: "Bank details",
-    status: "Approved",
-    date: "18 Apr 2021",
-    progress: 100,
-    completed: true,
-    assignee: { name: "Aaron More", avatar: null },
-  },
-  {
-    id: 2,
-    title: "CIN number",
-    status: "In review",
-    date: "18 Apr 2021",
-    progress: 55,
-    completed: true,
-    assignee: { name: "Aaron More", avatar: null },
-  },
-  {
-    id: 3,
-    title: "ID Proof",
-    status: "Not Approved",
-    date: "18 Apr 2021",
-    progress: 30,
-    completed: true,
-    assignee: null,
-  },
-  {
-    id: 4,
-    title: "Interactive prototype for app screens of deltamine project",
-    status: "In review",
-    date: "18 Apr 2021",
-    progress: 40,
-    completed: false,
-    assignee: null,
-  },
-  {
-    id: 5,
-    title: "Interactive prototype for app screens of deltamine project",
-    status: "Approved",
-    date: "",
-    progress: 90,
-    completed: true,
-    assignee: null,
-  },
-];
+// const currentTasks = [
+//   {
+//     id: 1,
+//     title: "Bank details",
+//     status: "Approved",
+//     date: "18 Apr 2021",
+//     progress: 100,
+//     completed: true,
+//     assignee: { name: "Aaron More", avatar: null },
+//   },
+//   {
+//     id: 2,
+//     title: "CIN number",
+//     status: "In review",
+//     date: "18 Apr 2021",
+//     progress: 55,
+//     completed: true,
+//     assignee: { name: "Aaron More", avatar: null },
+//   },
+//   {
+//     id: 3,
+//     title: "ID Proof",
+//     status: "Not Approved",
+//     date: "18 Apr 2021",
+//     progress: 30,
+//     completed: true,
+//     assignee: null,
+//   },
+//   {
+//     id: 4,
+//     title: "Interactive prototype for app screens of deltamine project",
+//     status: "In review",
+//     date: "18 Apr 2021",
+//     progress: 40,
+//     completed: false,
+//     assignee: null,
+//   },
+//   {
+//     id: 5,
+//     title: "Interactive prototype for app screens of deltamine project",
+//     status: "Approved",
+//     date: "",
+//     progress: 90,
+//     completed: true,
+//     assignee: null,
+//   },
+// ];
 
-const upcomingTasks = [
-  {
-    id: 1,
-    title: "Create a user flow of social application design",
-    status: "Disable",
-    date: "18 Apr 2021",
-    progress: 20,
-    assignee: { name: "Aaron More", avatar: null },
-  },
-  {
-    id: 2,
-    title: "Create a user flow of social application design",
-    status: "Disable",
-    date: "18 Apr 2021",
-    progress: 15,
-    assignee: { name: "Aaron More", avatar: null },
-  },
-  {
-    id: 3,
-    title: "Landing page design for Fintech project of singapore",
-    status: "Disable",
-    date: "18 Apr 2021",
-    progress: 10,
-    assignee: null,
-  },
-  {
-    id: 4,
-    title: "Interactive prototype for app screens of deltamine project",
-    status: "Disable",
-    date: "",
-    progress: 25,
-    assignee: null,
-  },
-  {
-    id: 5,
-    title: "Interactive prototype for app screens of deltamine project",
-    status: "Disable",
-    date: "",
-    progress: 0,
-    assignee: null,
-  },
-];
+// const upcomingTasks = [
+//   {
+//     id: 1,
+//     title: "Create a user flow of social application design",
+//     status: "Disable",
+//     date: "18 Apr 2021",
+//     progress: 20,
+//     assignee: { name: "Aaron More", avatar: null },
+//   },
+//   {
+//     id: 2,
+//     title: "Create a user flow of social application design",
+//     status: "Disable",
+//     date: "18 Apr 2021",
+//     progress: 15,
+//     assignee: { name: "Aaron More", avatar: null },
+//   },
+//   {
+//     id: 3,
+//     title: "Landing page design for Fintech project of singapore",
+//     status: "Disable",
+//     date: "18 Apr 2021",
+//     progress: 10,
+//     assignee: null,
+//   },
+//   {
+//     id: 4,
+//     title: "Interactive prototype for app screens of deltamine project",
+//     status: "Disable",
+//     date: "",
+//     progress: 25,
+//     assignee: null,
+//   },
+//   {
+//     id: 5,
+//     title: "Interactive prototype for app screens of deltamine project",
+//     status: "Disable",
+//     date: "",
+//     progress: 0,
+//     assignee: null,
+//   },
+// ];
 
 const STATUS_FILTERS = ["All", "Approved", "In review", "Not Approved", "Disable"];
 
@@ -242,14 +243,25 @@ export default function ServiceSelection() {
 
           // Fetch approval status
           const respFields = await getResponseFieldsBySerId(selectedService.ServiceID);
-          const allFields = (respFields.results || []).flatMap((r) => r.fields || []);
 
-          // Approved only when admin has verified all fields (verify === 1)
-          const isRejected = allFields.some((f) => f.reject === 1);
-          const allVerified = allFields.length > 0 && allFields.every((f) => f.verify === 1);
-          setApprovalStatus(
-            isRejected ? "Not Approved" : allVerified ? "Approved" : "In review"
-          );
+          if (!respFields?.results || respFields.results.length === 0) {
+            setApprovalStatus("No Records Found");
+          } else {
+            const allFields = respFields.results.flatMap((r) => r.fields || []);
+
+            const isRejected = allFields.some((f) => f.reject === 1);
+            const allVerified =
+              allFields.length > 0 &&
+              allFields.every((f) => f.verify === 1);
+
+            setApprovalStatus(
+              isRejected
+                ? "Not Approved"
+                : allVerified
+                  ? "Approved"
+                  : "In review"
+            );
+          }
         } catch (err) {
           setTasksError("Failed to fetch tasks from /Task API.");
           setApprovalStatus(null);
@@ -274,11 +286,20 @@ export default function ServiceSelection() {
 
       getResponseFieldsBySerId(selectedService.ServiceID)
         .then((data) => {
-          const allFields = (data.results || []).flatMap((r) => r.fields || []);
+          if (!data?.results || data.results.length === 0) {
+            setVerifiedFields([]);
+            setLoadingDocuments(false);
+            return;
+          }
+
+          const allFields = data.results.flatMap((r) => r.fields || []);
+
           let verified = [];
 
           if (activeTab === "Documents") {
-            verified = allFields.filter((f) => f.verify === 1 || f.verify === 0);
+            verified = allFields.filter(
+              (f) => f.verify === 1 || f.verify === 0
+            );
           } else if (activeTab === "Task") {
             verified = allFields.filter((f) => f.verify === 1);
           } else {
@@ -290,6 +311,7 @@ export default function ServiceSelection() {
         })
         .catch((err) => {
           console.error("[Documents] getResponseFields API error:", err);
+          setVerifiedFields([]);
           setDocumentsError("Failed to fetch verified fields.");
           setLoadingDocuments(false);
         });
@@ -301,17 +323,29 @@ export default function ServiceSelection() {
   // Fetch response fields by company ID
   const fetchFields = async () => {
     if (!selectedService?.ServiceID) return;
+
     setResponseFieldsLoading(true);
+
     try {
       const response = await getResponseFieldsBySerId(selectedService.ServiceID);
-      setResponseFields(response.results || []);
+
+      if (
+        !response ||
+        !response.results ||
+        response.results.length === 0
+      ) {
+        setResponseFields([]);
+        return;
+      }
+
+      setResponseFields(response.results);
     } catch (error) {
       console.error("Error fetching response fields:", error);
+      setResponseFields([]);
     } finally {
       setResponseFieldsLoading(false);
     }
   };
-
   useEffect(() => {
     fetchFields();
   }, [selectedService?.ServiceID]);
@@ -382,20 +416,115 @@ export default function ServiceSelection() {
       .slice(0, 2)
       .toUpperCase();
 
+  // Helper to find previous submitted field value for status mapping
+  const getFieldPrevData = (fieldID, fieldName) => {
+    const dataArray = Array.isArray(responseFields)
+      ? responseFields
+      : responseFields?.results || [];
+    if (!dataArray || dataArray.length === 0) return null;
+
+    for (let i = dataArray.length - 1; i >= 0; i--) {
+      const set = dataArray[i];
+      const foundField = set.fields?.find(
+        (f) =>
+          (f.field_id && Number(f.field_id) === Number(fieldID)) ||
+          f.field_key === fieldName,
+      );
+      if (foundField) return foundField;
+    }
+    return null;
+  };
+
+  // Memoized actual tasks from forms mapping
+  const tasks = useMemo(() => {
+    if (!formConfig || formConfig.length === 0) return [];
+
+    return formConfig.map((item) => {
+      const sections = item.Sections || [];
+      const fields = sections.flatMap((s) => s.Fields || []);
+
+      let allSubmitted = fields.length > 0;
+      let allVerified = fields.length > 0;
+      let anyRejected = false;
+      let anySubmitted = false;
+
+      fields.forEach((field) => {
+        const prevData = getFieldPrevData(field.FieldID, field.FieldName);
+        if (prevData) {
+          anySubmitted = true;
+          if (prevData.reject === 1) anyRejected = true;
+          if (prevData.verify !== 1) allVerified = false;
+        } else {
+          allSubmitted = false;
+          allVerified = false;
+        }
+      });
+
+      let calculatedStatus = item.Status || "In review";
+      if (anyRejected) {
+        calculatedStatus = "Not Approved";
+      } else if (allSubmitted && allVerified) {
+        calculatedStatus = "Approved";
+      } else if (anySubmitted) {
+        calculatedStatus = "In review";
+      }
+
+      return {
+        id: item.Id,
+        title: item.SubFormMaster?.SubFormName || "Required Form",
+        subtitle:
+          item.Section || item.Sections?.[0]?.SectionName || "Documentation",
+        status: calculatedStatus,
+        date: item.EmployeeAssignment?.CreatedAt
+          ? new Date(item.EmployeeAssignment.CreatedAt).toLocaleDateString(
+            "en-GB",
+            {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            },
+          )
+          : item.UpdatedAt
+            ? new Date(item.UpdatedAt).toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
+            : "Pending",
+        progress:
+          calculatedStatus === "Approved" ? 100 : calculatedStatus === "In review" ? 70 : anySubmitted ? 50 : 40,
+        completed: calculatedStatus === "Approved",
+        assignee: item.EmployeeAssignment?.EmployeeName ? {
+          name: item.EmployeeAssignment.EmployeeName,
+          avatar: "https://ui-avatars.com/api/?name=" + encodeURIComponent(item.EmployeeAssignment.EmployeeName) + "&background=4b49ac&color=fff"
+        } : null,
+        originalData: item,
+      };
+    });
+  }, [formConfig, responseFields]);
+
   // Prefer real API task list if it looks like an array of tasks, otherwise fall back to mock data
   const realTaskList = Array.isArray(tasksFromApi) && tasksFromApi.length > 0 ? tasksFromApi : null;
 
-  const displayedCurrentTasks = (realTaskList || currentTasks).map((t) => ({
-    id: t.id ?? t.TaskID,
-    title: t.title ?? t.TaskName ?? "Untitled task",
-    status: t.status ?? approvalStatus ?? "In review",
-    date: t.date ?? t.assignedAt ?? "",
-    progress: t.progress ?? t.percentComplete ?? 0,
-    completed: t.completed ?? t.status === "Approved",
-    assignee: t.assignee ?? null,
-  }));
+const displayedCurrentTasks =
+  tasks.length > 0
+    ? tasks.slice(0, 5)
+    : realTaskList
+      ? realTaskList.map((t) => ({
+          id: t.id ?? t.TaskID,
+          title: t.title ?? t.TaskName ?? "Untitled task",
+          status: t.status ?? approvalStatus ?? "In review",
+          date: t.date ?? t.assignedAt ?? "",
+          progress: t.progress ?? t.percentComplete ?? 0,
+          completed: t.completed ?? t.status === "Approved",
+          assignee: t.assignee ?? null,
+        }))
+      : [];
 
-  const displayedUpcomingTasks = upcomingTasks;
+const displayedUpcomingTasks =
+  tasks.length > 5
+    ? tasks.slice(5)
+    : [];
 
   const filteredCurrentTasks =
     statusFilter === "All"
@@ -411,17 +540,29 @@ export default function ServiceSelection() {
     ? tasksFromApi?.summary
     : tasksFromApi?.[0];
 
+  // Full set of tasks actually rendered (current + upcoming), so the summary card
+  // always matches what's shown in the task list below.
+  const allListedTasks = [...displayedCurrentTasks, ...displayedUpcomingTasks];
+
   const totalTasksCompleted =
-    summary?.totalTasksCompleted ?? summary?.totalTasks ?? displayedCurrentTasks.filter((t) => t.completed).length;
+    allListedTasks.length > 0
+      ? allListedTasks.filter((t) => t.completed).length
+      : (summary?.totalTasksCompleted ?? summary?.totalTasks ?? 0);
   const startDate = summary?.assignedAt ?? summary?.startDate ?? "-";
   const paymentDue =
     summary?.paymentDue !== undefined && summary?.paymentDue !== null ? `₹${summary.paymentDue}` : "-";
-  const rawPercent = summary?.percentComplete ?? 0;
-  const overallPercent = Math.min(
-    100,
-    Math.max(0, parseFloat(String(rawPercent).replace("%", "")) || 0)
-  );
-  const overallStatusLabel = "In Progress";
+  const overallPercent =
+    allListedTasks.length > 0
+      ? Math.round((totalTasksCompleted / allListedTasks.length) * 100)
+      : Math.min(100, Math.max(0, parseFloat(String(summary?.percentComplete ?? 0).replace("%", "")) || 0));
+  const overallStatusLabel =
+    allListedTasks.length === 0
+      ? "In Progress"
+      : allListedTasks.some((t) => t.status === "Not Approved")
+        ? "Not Approved"
+        : allListedTasks.every((t) => t.completed)
+          ? "Completed"
+          : "In Progress";
 
   // ---------- Reusable task row ----------
   const TaskRow = ({ task, disabled }) => (
@@ -874,7 +1015,7 @@ export default function ServiceSelection() {
                       className={`flex items-center p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0 ${selectedService?.ServiceDetailID === s.ServiceDetailID ? "bg-yellow-100" : ""
                         }`}
                     >
-                      <span className="text-2xl mr-3">🛠️</span>
+                 
                       <div>
                         <h4 className="font-medium text-gray-800">{s.ItemName || `Service ID: ${s.ServiceID}`}</h4>
                         <p className="text-xs text-gray-500">
@@ -1036,13 +1177,17 @@ export default function ServiceSelection() {
               <div>Progress</div>
               <div>Assignee</div>
             </div>
-            {loadingTasks ? (
-              <div className="py-6 text-gray-500 text-sm">Loading tasks...</div>
-            ) : filteredCurrentTasks.length > 0 ? (
-              filteredCurrentTasks.map((task) => <TaskRow key={task.id} task={task} />)
-            ) : (
-              <div className="py-6 text-gray-500 text-sm">No current tasks.</div>
-            )}
+          {loadingTasks ? (
+    <div>Loading...</div>
+) : displayedCurrentTasks.length === 0 ? (
+    <div className="py-6 text-center text-gray-500">
+        No Records Found
+    </div>
+) : (
+    displayedCurrentTasks.map((task) => (
+        <TaskRow key={task.id} task={task} />
+    ))
+)}
           </div>
 
           {/* Upcoming Task */}
@@ -1060,11 +1205,19 @@ export default function ServiceSelection() {
               <div>Progress</div>
               <div>Assignee</div>
             </div>
-            {filteredUpcomingTasks.length > 0 ? (
-              filteredUpcomingTasks.map((task) => <TaskRow key={task.id} task={task} disabled />)
-            ) : (
-              <div className="py-6 text-gray-400 text-sm">No upcoming tasks.</div>
-            )}
+     {loadingTasks ? (
+  <div className="py-6 text-gray-500 text-sm">
+    Loading tasks...
+  </div>
+) : filteredUpcomingTasks.length > 0 ? (
+  filteredUpcomingTasks.map((task) => (
+    <TaskRow key={task.id} task={task} disabled />
+  ))
+) : (
+  <div className="py-6 text-center text-gray-500 text-sm">
+    No Records Found
+  </div>
+)}
           </div>
 
           {/* Keep the original dynamic task listing available, hidden below the
@@ -1129,7 +1282,9 @@ export default function ServiceSelection() {
             </div>
           )}
           {!loadingDocuments && !documentsError && verifiedFields.length === 0 && (
-            <p className="text-gray-600">No verified documents found.</p>
+            <div className="py-8 text-center text-gray-500">
+              No Records Found
+            </div>
           )}
         </div>
       ) : activeTab === "Deliverables" ? (
@@ -1187,7 +1342,26 @@ export default function ServiceSelection() {
       ) : null}
 
       {activeFormTask && (
-        <TaskFormModal task={activeFormTask} onClose={() => setActiveFormTask(null)} />
+        activeFormTask.originalData ? (
+          <ServiceTaskForm
+            task={activeFormTask}
+            serviceDetails={{
+              CompanyID: companyId,
+              ServiceID: selectedService?.ServiceID,
+              QuoteID: selectedService?.QuoteID || navQuoteId,
+              OrderID: selectedService?.OrderID,
+              submittedBy: getSecureItem("partnerUser")?.EmployeeID || 1,
+            }}
+            responseFields={responseFields}
+            onClose={() => setActiveFormTask(null)}
+            onSuccess={() => {
+              setActiveFormTask(null);
+              fetchFields(); // refresh response fields
+            }}
+          />
+        ) : (
+          <TaskFormModal task={activeFormTask} onClose={() => setActiveFormTask(null)} />
+        )
       )}
     </div>
   );
