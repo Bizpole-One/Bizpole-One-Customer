@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { getOrdersByCompanyId } from "../api/Orders/Order";
 import { getSecureItem } from "../utils/secureStorage";
 import DataTable from "../components/Datatable";
-import { DollarSign, CheckCircle, FileText, CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react";
+import { DollarSign, CheckCircle, FileText, CheckCircle2, XCircle, AlertCircle, Clock, MoreHorizontal } from "lucide-react";
 
 /* ── Order status mapping ── */
 const orderStatusList = [
@@ -23,6 +23,8 @@ const getOrderStatusLabel = (statusValue) => {
 };
 
 const PAGE_SIZE = 10;
+const VISIBLE_TAB_COUNT = 5;
+const TAB_ORDER_STORAGE_KEY = "individualServiceTabOrder";
 
 /* ── KPI Card ── */
 const KpiCard = ({ icon: Icon, iconBg, label, value }) => (
@@ -88,12 +90,32 @@ const MyIndividualservices = () => {
   const [apiMessage, setApiMessage]                 = useState("");
   const [activeStatus, setActiveStatus]             = useState('ALL');
 
+  // Order in which tabs appear; first VISIBLE_TAB_COUNT show inline, rest sit in "More"
+  const [tabOrder, setTabOrder] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(TAB_ORDER_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch { /* ignore malformed storage */ }
+    return ['ALL', ...orderStatusList.map((s) => s.label)];
+  });
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
+
   const [selectedCompany, setSelectedCompany] = useState(() => {
     try {
       const raw = getSecureItem("selectedCompany");
       return raw && typeof raw === "string" ? JSON.parse(raw) : raw;
     } catch { return null; }
   });
+
+  /* ── Close "More" dropdown on outside click ── */
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   /* ── Fetch orders ── */
   useEffect(() => {
@@ -192,6 +214,33 @@ const MyIndividualservices = () => {
     ].map(tab => ({ ...tab, count: counts[tab.key] || 0 }));
   }, [individualServices]);
 
+  /* ── Tabs re-ordered per tabOrder, split into visible / overflow ── */
+  const orderedTabs = useMemo(() => {
+    const byKey = Object.fromEntries(statusTabs.map((t) => [t.key, t]));
+    return tabOrder.map((key) => byKey[key]).filter(Boolean);
+  }, [statusTabs, tabOrder]);
+
+  const visibleTabs = orderedTabs.slice(0, VISIBLE_TAB_COUNT);
+  const moreTabs = orderedTabs.slice(VISIBLE_TAB_COUNT);
+  const activeIsInMore = moreTabs.some((t) => t.key === activeStatus);
+
+  /* ── Select a tab; if it came from "More", place it in the last visible slot (next to the button) ── */
+  const handleSelectTab = (key) => {
+    setActiveStatus(key);
+    setMoreOpen(false);
+    setTabOrder((prev) => {
+      if (prev.indexOf(key) < VISIBLE_TAB_COUNT) return prev; // already visible, no reorder needed
+      const withoutKey = prev.filter((k) => k !== key);
+      const next = [
+        ...withoutKey.slice(0, VISIBLE_TAB_COUNT - 1),
+        key,
+        ...withoutKey.slice(VISIBLE_TAB_COUNT - 1),
+      ];
+      try { window.localStorage.setItem(TAB_ORDER_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   /* ── Filtered rows ── */
   const filteredServices = useMemo(() => {
     if (activeStatus === 'ALL') return individualServices;
@@ -215,7 +264,6 @@ const MyIndividualservices = () => {
             ? row.ServiceList.map((svc, idx) => (
               <li key={svc.ServiceDetailID || svc.ServiceID || idx} className="mb-1">
                 {svc.ItemName || svc.ServiceName || `Service ${idx + 1}`}{' '}
-                <span className="text-xs text-gray-500">₹{svc.Total || 'N/A'}</span>
               </li>
             ))
             : <li className="text-gray-400">No services</li>
@@ -270,12 +318,12 @@ const MyIndividualservices = () => {
       {/* Divider */}
       <div className="border-t border-amber-200 mb-4" />
 
-      {/* Status tabs */}
-      <div className="flex items-center gap-2 flex-wrap mb-6">
-        {statusTabs.map(tab => (
+      {/* Status tabs: 5 visible + "More" dropdown */}
+      <div className="flex items-center gap-2 flex-wrap mb-6" ref={moreRef}>
+        {visibleTabs.map(tab => (
           <button
             key={tab.key}
-            onClick={() => setActiveStatus(tab.key)}
+            onClick={() => handleSelectTab(tab.key)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               activeStatus === tab.key
                 ? 'bg-amber-400 text-white shadow-sm'
@@ -285,6 +333,38 @@ const MyIndividualservices = () => {
             {tab.label} ({tab.count})
           </button>
         ))}
+
+        {moreTabs.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-label="More status filters"
+              className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
+                activeIsInMore
+                  ? 'bg-amber-400 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <MoreHorizontal size={18} />
+            </button>
+
+            {moreOpen && (
+              <div className="absolute left-0 top-full mt-2 z-20 bg-white border border-gray-100 rounded-xl shadow-lg py-2 min-w-[190px]">
+                {moreTabs.map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => handleSelectTab(tab.key)}
+                    className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                      activeStatus === tab.key ? 'text-amber-600 font-medium bg-amber-50' : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {tab.label} ({tab.count})
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Table */}

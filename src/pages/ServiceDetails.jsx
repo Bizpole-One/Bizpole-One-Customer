@@ -16,7 +16,6 @@ import {
   FaFileAlt,
   FaUsers,
   FaMapMarkerAlt,
-  FaPhone,
   FaEnvelope,
   FaClipboardCheck,
   FaArrowRight,
@@ -25,7 +24,8 @@ import {
   FaRupeeSign,
   FaTimes,
   FaPlus,
-  FaCheck
+  FaCheck,
+  FaPhoneAlt
 } from "react-icons/fa";
 import { HiOutlineLocationMarker, HiOutlineCheckCircle } from "react-icons/hi";
 
@@ -100,6 +100,16 @@ const ServiceDetails = () => {
     };
     fetchPrice();
   }, [stateId, service?.ServiceID]);
+
+  useEffect(() => {
+    if (stateId && allStates.length === 0) {
+      setStatesLoading(true);
+      getAllStates()
+        .then((states) => setAllStates(states || []))
+        .catch(() => setAllStates([]))
+        .finally(() => setStatesLoading(false));
+    }
+  }, [stateId]);
 
   // Use Features from API as Key Benefits
   const benefits = service?.Features && Array.isArray(service.Features)
@@ -328,19 +338,10 @@ const ServiceDetails = () => {
 
                 {/* RIGHT – pricing card */}
                 <div className="w-full lg:w-72 xl:w-80 shrink-0">
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-lg hover:shadow-xl transition-all duration-300 sticky top-24 relative p-5">
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-lg hover:shadow-xl transition-all duration-300 sticky top-24  p-5">
                     {/* Add/Select (+) Button */}
-                    <button
-                      onClick={handleAddToSelection}
-                      className={`absolute top-3 right-3 rounded-full w-9 h-9 flex items-center justify-center shadow-md transition-all z-10
-                        ${isSelected ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-yellow-400 hover:bg-yellow-500 text-black'}`}
-                      title={isSelected ? "Remove from Selection" : "Add to Selection"}
-                    >
-                      {isSelected ? <FaCheck size={18} /> : <FaPlus size={18} />}
-                    </button>
-
-                    {/* Price Display */}
-                    <div className="mb-4 mt-2">
+                    {/* Price / prompt line */}
+                    <div className="mb-4">
                       <AnimatePresence mode="wait">
                         {stateId && !priceLoading && price !== null && typeof price === 'object' ? (
                           <motion.div
@@ -354,21 +355,6 @@ const ServiceDetails = () => {
                             <span className="text-2xl font-bold text-gray-900">
                               {price.TotalFee?.toLocaleString('en-IN')}
                             </span>
-                            {/* <span className="text-xs text-gray-500 ml-1">+ GST</span> */}
-                          </motion.div>
-                        ) : stateId && !priceLoading && price !== null ? (
-                          <motion.div
-                            key="price-simple"
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="flex items-baseline gap-1"
-                          >
-                            <FaRupeeSign className="text-green-600 text-sm" />
-                            <span className="text-2xl font-bold text-gray-900">
-                              {typeof price === 'number' ? price.toLocaleString('en-IN') : price}
-                            </span>
-                            <span className="text-xs text-gray-500 ml-1">+ GST</span>
                           </motion.div>
                         ) : stateId && !priceLoading && price === null ? (
                           <motion.div
@@ -390,63 +376,53 @@ const ServiceDetails = () => {
                             Checking price...
                           </motion.div>
                         ) : (
-                          <motion.div
+                          <motion.p
                             key="no-state"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             className="text-sm text-gray-500"
                           >
-                            Select state to view price
-                          </motion.div>
+                            Select your state to view pricing
+                          </motion.p>
                         )}
                       </AnimatePresence>
                     </div>
 
-                    {/* State Selection */}
-                    <div className="mb-4">
-                      <label className="block text-xs font-medium text-gray-500 mb-2">
-                        Service Location
-                      </label>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={async () => {
-                          setShowStateModal(true);
-                          setSelectedStateForModal(stateId || "");
-                          if (allStates.length === 0) {
-                            setStatesLoading(true);
-                            try {
-                              const states = await getAllStates();
-                              setAllStates(states || []);
-                            } catch (error) {
-                              console.error("Error fetching states:", error);
-                              setAllStates([]);
-                            } finally {
-                              setStatesLoading(false);
-                            }
+                    {/* State selection pill */}
+                    <motion.button
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={async () => {
+                        setShowStateModal(true);
+                        setSelectedStateForModal(stateId || "");
+                        if (allStates.length === 0) {
+                          setStatesLoading(true);
+                          try {
+                            const states = await getAllStates();
+                            setAllStates(states || []);
+                          } catch (error) {
+                            console.error("Error fetching states:", error);
+                            setAllStates([]);
+                          } finally {
+                            setStatesLoading(false);
                           }
-                        }}
-                        className="w-full text-left"
-                      >
-                        <span className="flex items-center gap-1 text-xs underline text-gray-700 hover:text-yellow-600 transition-colors">
-                          <HiOutlineLocationMarker className="text-gray-600" size={16} />
-                          <span>
-                            {stateId ? (
-                              <span className="font-medium">
-                                {allStates.find(s => String(s.id || s.StateID) === String(stateId))?.state_name || "Selected State"}
-                              </span>
-                            ) : (
-                              <span className="text-gray-500">Select your state</span>
-                            )}
-                          </span>
-                        </span>
-                      </motion.button>
-                    </div>
+                        }
+                      }}
+                      className="w-full flex items-center gap-3 bg-[#FDF4D6] hover:bg-[#fbecc0] transition-colors rounded-2xl px-4 py-3 mb-5"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <HiOutlineLocationMarker className="text-amber-600" size={18} />
+                      </div>
+                      <span className="font-bold text-gray-900 text-sm text-left flex-1">
+                        {stateId
+                          ? allStates.find(s => String(s.id || s.StateID) === String(stateId))?.state_name || "Selected State"
+                          : "Select Your State"}
+                      </span>
+                    </motion.button>
 
                     {/* What's Included */}
-                    <div className="mb-4">
-                      <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-1">
-                        <HiOutlineCheckCircle className="text-green-500" size={14} />
+                    <div className="mb-5">
+                      <h4 className="text-sm font-extrabold text-gray-900 mb-3">
                         What's Included
                       </h4>
                       <ul className="space-y-2.5">
@@ -456,10 +432,12 @@ const ServiceDetails = () => {
                             initial={{ opacity: 0, x: -10 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: index * 0.05 }}
-                            className="flex items-start gap-2 text-xs text-gray-600"
+                            className="flex items-center gap-2.5 text-sm text-gray-700"
                           >
-                            <FaCheckCircle className="text-yellow-500 shrink-0 mt-0.5" size={12} />
-                            <span className="leading-relaxed">{item}</span>
+                            <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                              <FaCheck className="text-green-600" size={10} />
+                            </div>
+                            <span>{item}</span>
                           </motion.li>
                         ))}
                       </ul>
@@ -470,21 +448,15 @@ const ServiceDetails = () => {
                       <motion.button
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        onClick={handleRequestQuote}
-                        disabled={quoteLoading || !service?.ServiceID}
-                        className={`w-full bg-gradient-to-r from-yellow-400 to-yellow-500 text-black font-semibold py-2.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm group ${quoteLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        onClick={handleAddToSelection}
+                        disabled={!service?.ServiceID}
+                        className={`w-full font-bold py-3 px-4 rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm ${isSelected
+                          ? "bg-green-500 text-white hover:bg-green-600"
+                          : "bg-gradient-to-r from-yellow-400 to-yellow-500 text-black"
+                          }`}
                       >
-                        {quoteLoading ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-gray-900 border-t-transparent rounded-full animate-spin mr-2" />
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <span>Request Quote</span>
-                            <FaArrowRight className="text-xs group-hover:translate-x-1 transition-transform" />
-                          </>
-                        )}
+                        <span>{isSelected ? "Added to Selection" : "Add to Selection"}</span>
+                        {isSelected ? <FaCheck size={12} /> : <FaArrowRight className="text-xs" />}
                       </motion.button>
 
                       <motion.a
@@ -493,17 +465,15 @@ const ServiceDetails = () => {
                         href="tel:+919539995533"
                         className="flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all text-sm font-medium w-full"
                       >
-                        <FaPhone size={12} />
+                         <FaPhoneAlt size={12} />
                         <span>Call Us</span>
                       </motion.a>
-
-
 
                       <motion.a
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         href="mailto:info@bizpole.in"
-                        className="w-full flex items-center font-normal justify-center gap-2 px-3 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all text-sm font-medium"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all text-sm font-medium"
                       >
                         <FaEnvelope size={12} />
                         <span>Email Us</span>
