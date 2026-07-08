@@ -101,6 +101,16 @@ const MyPackages = () => {
         setTotalPages(total ? Math.ceil(total / PAGE_SIZE) : 1);
       } catch (err) {
         console.error("Error fetching packages:", err);
+        const resData = err.response?.data;
+        if (resData && resData.success === false) {
+          // Backend returns 404 with a message when a company has no orders — treat as empty, not an error
+          setPackages([]);
+          setTotalCount(resData.total || 0);
+          setTotalPages(1);
+        } else {
+          setPackages([]);
+          setError(err.message || "Failed to fetch packages");
+        }
       } finally {
         setLoading(false);
       }
@@ -243,8 +253,6 @@ const MyPackages = () => {
       {/* Table */}
       {loading ? (
         <div className="text-center py-20 text-gray-400 text-sm">Loading packages...</div>
-      ) : (!packages.length && error === null) ? (
-        <div className="text-center py-20 text-gray-400 text-sm">No order details found for this company</div>
       ) : error ? (
         <div className="text-center py-20 text-red-500 text-sm">{error}</div>
       ) : (
@@ -258,6 +266,7 @@ const MyPackages = () => {
           totalPages={totalPages}
           onPrev={handlePrev}
           onNext={handleNext}
+          emptyMessage="No records available"
         />
         </div>
       )}
