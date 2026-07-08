@@ -9,7 +9,7 @@ import {
   FiAlertCircle,
   FiDownload
 } from 'react-icons/fi';
-import { getCompanyInvoices } from '../api/Companyinvoice';
+import { getCompanyInvoices, getCompanyOrders } from '../api/Companyinvoice';
 import CryptoJS from "crypto-js";
 import { ProfileCompanyContext } from './ProfileLayout';
 import { useNavigate } from 'react-router-dom';
@@ -38,19 +38,52 @@ const InvoiceProfile = () => {
     }
   }, [selectedCompanyId]);
 
+  // Sum the real GST/Advance/Total figures straight off an order's ServiceDetails line items —
+  // Subtotal is derived later as Total minus this real GST amount (not computed independently),
+  // so Subtotal + GST always reconciles exactly to Total.
+  const aggregateOrderAmounts = (order) => {
+    const services = Array.isArray(order?.ServiceDetails) ? order.ServiceDetails : [];
+    return services.reduce(
+      (acc, s) => {
+        acc.gst += parseFloat(s.GstAmount) || 0;
+        acc.advance += parseFloat(s.AdvanceAmount) || 0;
+        acc.pending += parseFloat(s.PendingAmount) || 0;
+        acc.total += parseFloat(s.Total) || 0;
+        return acc;
+      },
+      { gst: 0, advance: 0, pending: 0, total: 0 }
+    );
+  };
+
   const fetchInvoices = async (companyId) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await getCompanyInvoices({
-        companyId,
-        limit: 50,
-        page: 1
-      });
+      const [response, ordersRes] = await Promise.all([
+        getCompanyInvoices({ companyId, limit: 50, page: 1 }),
+        getCompanyOrders({ companyId, limit: 50, page: 1 }),
+      ]);
 
       if (response.success && Array.isArray(response.data)) {
-        setInvoices(response.data);
-        calculateStats(response.data);
+        const ordersByOrderId = new Map(
+          (Array.isArray(ordersRes?.data) ? ordersRes.data : []).map((o) => [String(o.OrderID), o])
+        );
+        const enriched = response.data.map((inv) => {
+          const order = ordersByOrderId.get(String(inv.OrderID));
+          return order
+            ? {
+                ...inv,
+                amounts: aggregateOrderAmounts(order),
+                serviceDetails: order.ServiceDetails || [],
+                quoteCodeId: order.QuoteCodeId,
+                customerName: order.CustomerName,
+                state: order.StateService,
+                franchiseeId: order.FranchiseeID,
+              }
+            : inv;
+        });
+        setInvoices(enriched);
+        calculateStats(enriched);
       } else {
         setInvoices([]);
         calculateStats([]);
@@ -199,6 +232,20 @@ const InvoiceProfile = () => {
 
   const nextInvoice = getNextInvoice();
 
+  // Total is GST-inclusive (that's what the API/InvoiceValue gives us). GST is the real
+  // GstAmount summed off QuoteServiceDetails (via invoice.amounts.gst) when available.
+  // Subtotal is the difference: Total - GST — never computed independently — so
+  // Subtotal + GST always reconciles exactly back to Total.
+  const getInvoiceBreakdown = (invoice) => {
+    const total = invoice?.amounts?.total
+      || parseFloat(invoice?.InvoiceValue || invoice?.OrderValue || invoice?.InvoiceTotal || 0) || 0;
+    const gst = invoice?.amounts?.gst || 0;
+    const subtotal = total - gst;
+    return { subtotal, gst, total };
+  };
+
+  const selectedInvoiceBreakdown = selectedInvoice ? getInvoiceBreakdown(selectedInvoice) : null;
+
   return (
     <div>
       <div className="mx-auto px-6 py-10">
@@ -245,7 +292,7 @@ const InvoiceProfile = () => {
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm text-gray-500">Next monthly invoice</h3>
                       <button
-                        onClick={() => handleViewInvoice(nextInvoice)}
+                        onClick={() => handleOpenFullPreview(nextInvoice)}
                         className="text-xs font-medium text-gray-700 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 transition-colors"
                       >
                         Preview
@@ -260,7 +307,7 @@ const InvoiceProfile = () => {
                       </span>
                     </div>
                     <button
-                      onClick={() => handleViewInvoice(nextInvoice)}
+                      onClick={() => handleOpenFullPreview(nextInvoice)}
                       className="w-full flex items-center justify-between text-sm text-gray-500 pt-3 border-t border-gray-100 hover:text-gray-700 transition-colors"
                     >
                       <span>
@@ -472,29 +519,27 @@ const InvoiceProfile = () => {
                       </p>
                     </div>
 
-                    <div className="space-y-2 mb-5 pb-5 border-b border-gray-200 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">1 Full</span>
-                        <span className="text-gray-900">
-                          {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
-                        </span>
+                    {!showFullInvoice && (
+                      <div className="space-y-2 mb-5 pb-5 border-b border-gray-200 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-600">Subtotal</span>
+                          <span className="text-gray-900">
+                            {formatCurrency(selectedInvoiceBreakdown.subtotal)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-600">GST Amount</span>
+                          <span className="text-gray-900">{formatCurrency(selectedInvoiceBreakdown.gst)}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">0 {showFullInvoice ? 'Dev' : 'View'}</span>
-                        <span className="text-gray-900">₹0.00</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">0 Collab</span>
-                        <span className="text-gray-900">₹0.00</span>
-                      </div>
-                    </div>
+                    )}
 
                     {!showFullInvoice ? (
                       <>
                         <div className="flex items-center justify-between mb-5">
-                          <span className="text-sm font-medium text-gray-900">Projected subtotal</span>
+                          <span className="text-sm font-medium text-gray-900">Total (incl. GST)</span>
                           <span className="text-sm font-semibold text-gray-900">
-                            {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
+                            {formatCurrency(selectedInvoiceBreakdown.total)}
                           </span>
                         </div>
                         <div className="flex items-start gap-2 p-3 rounded-lg bg-[#E4ECFF]">
@@ -510,17 +555,17 @@ const InvoiceProfile = () => {
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-gray-600">Subtotal</span>
                           <span className="text-gray-900">
-                            {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
+                            {formatCurrency(selectedInvoiceBreakdown.subtotal)}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600">Taxes</span>
-                          <span className="text-gray-900">₹0.00</span>
+                          <span className="text-gray-600">GST Amount</span>
+                          <span className="text-gray-900">{formatCurrency(selectedInvoiceBreakdown.gst)}</span>
                         </div>
                         <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                           <span className="text-sm font-medium text-gray-900">Total</span>
                           <span className="text-sm font-semibold text-gray-900">
-                            {formatCurrency(selectedInvoice.InvoiceValue || selectedInvoice.OrderValue || selectedInvoice.InvoiceTotal)}
+                            {formatCurrency(selectedInvoiceBreakdown.total)}
                           </span>
                         </div>
                       </div>
@@ -537,7 +582,7 @@ const InvoiceProfile = () => {
                       </button>
                     ) : (
                       <button
-                        // onClick={() => handleOpenFullPreview(selectedInvoice)}
+                        onClick={() => handleOpenFullPreview(selectedInvoice)}
                         className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-md py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors mt-6"
                       >
                         <FiDownload className="w-4 h-4" />

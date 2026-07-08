@@ -125,6 +125,17 @@ const MyIndividualservices = () => {
         setTotalPages(total ? Math.ceil(total / PAGE_SIZE) : 1);
       } catch (err) {
         console.error("Error fetching packages:", err);
+        const resData = err.response?.data;
+        if (resData && resData.success === false) {
+          // Backend returns 404 with a message when a company has no orders — treat as empty, not an error
+          setIndividualServices([]);
+          setApiMessage(resData.message || "");
+          setTotalCount(resData.total || 0);
+          setTotalPages(1);
+        } else {
+          setIndividualServices([]);
+          setError(err.message || "Failed to fetch individual services");
+        }
       } finally {
         setLoading(false);
       }
@@ -279,8 +290,6 @@ const MyIndividualservices = () => {
       {/* Table */}
       {loading ? (
         <div className="text-center py-20 text-gray-400 text-sm">Loading individual services...</div>
-      ) : (!individualServices.length && apiMessage === "No order details found for this company") ? (
-        <div className="text-center py-20 text-gray-400 text-sm">No order details found for this company</div>
       ) : error ? (
         <div className="text-center py-20 text-red-500 text-sm">{apiMessage || error}</div>
       ) : (
@@ -294,6 +303,7 @@ const MyIndividualservices = () => {
           totalPages={totalPages}
           onPrev={handlePrev}
           onNext={handleNext}
+          emptyMessage="No records available"
         />
         </div>
       )}
