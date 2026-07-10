@@ -67,6 +67,23 @@ const ProgressBar = ({ value = 60 }) => (
 
 const statusProgress = { 1: 40, 2: 100, 3: 20, 4: 0, 5: 100 };
 
+/* ── Amount already paid on an order (Orders.ReceivedAmount, falling back to AdvanceAmount) ── */
+const getPaidAmount = (row) => {
+  if (row.ReceivedAmount != null) return parseFloat(row.ReceivedAmount) || 0;
+  if (row.AdvanceAmount != null) return parseFloat(row.AdvanceAmount) || 0;
+  if (Array.isArray(row.ServiceList)) {
+    return row.ServiceList.reduce((sum, svc) => sum + (parseFloat(svc.AdvanceAmount) || 0), 0);
+  }
+  return 0;
+};
+
+/* ── Amount still owed on an order (PendingAmount if provided, else Total - Paid) ── */
+const getDueAmount = (row) => {
+  if (row.PendingAmount != null) return parseFloat(row.PendingAmount) || 0;
+  const total = parseFloat(row.TotalAmount) || 0;
+  return Math.max(total - getPaidAmount(row), 0);
+};
+
 /* ══════════════════════════════════════════
    Main component
 ══════════════════════════════════════════ */
@@ -77,6 +94,7 @@ const MyPackages = () => {
   const [page, setPage]                 = useState(1);
   const [totalPages, setTotalPages]     = useState(1);
   const [totalCount, setTotalCount]     = useState(0);
+  const [apiMessage, setApiMessage]     = useState("");
   const [activeStatus, setActiveStatus] = useState('ALL');
 
   const [selectedCompany, setSelectedCompany] = useState(() => {
@@ -92,10 +110,26 @@ const MyPackages = () => {
       try {
         setLoading(true);
         setError(null);
+        setApiMessage("");
         const companyId = selectedCompany?.CompanyID || selectedCompany?.CompanyId || null;
         const res = await getOrdersByCompanyId({ companyId, page, limit: PAGE_SIZE, IsIndividual: 0 });
+        if (res && res.message) setApiMessage(res.message);
         const data = res.data || res.orders || res;
-        setPackages(Array.isArray(data) ? data : []);
+        let groupedOrders = [];
+        if (Array.isArray(data)) {
+          data.forEach(order => {
+            if (Array.isArray(order.ServiceDetails) && order.ServiceDetails.length > 0) {
+              groupedOrders.push({
+                ...order,
+                ServiceList: order.ServiceDetails,
+                TotalAmount: order.TotalAmount ?? order.totalAmount,
+                ReceivedAmount: order.ReceivedAmount,
+                PendingAmount: order.PendingAmount,
+              });
+            }
+          });
+        }
+        setPackages(groupedOrders);
         const total = res.total || res.count || (res.meta && res.meta.total) || 0;
         setTotalCount(total || 0);
         setTotalPages(total ? Math.ceil(total / PAGE_SIZE) : 1);
@@ -105,6 +139,7 @@ const MyPackages = () => {
         if (resData && resData.success === false) {
           // Backend returns 404 with a message when a company has no orders — treat as empty, not an error
           setPackages([]);
+          setApiMessage(resData.message || "");
           setTotalCount(resData.total || 0);
           setTotalPages(1);
         } else {
@@ -140,7 +175,7 @@ const MyPackages = () => {
   const kpi = useMemo(() => {
     const totalPackages = packages.length;
     const nextDue = packages.reduce(
-      (acc, o) => acc + (parseFloat(o.TotalAmount || o.totalAmount) || 0), 0
+      (acc, o) => acc + getDueAmount(o), 0
     );
     const dates = packages
       .map(o => o.CreatedAt ? new Date(o.CreatedAt) : null)
@@ -187,8 +222,27 @@ const MyPackages = () => {
       render: (row) => row.PackageName || row.PackageTitle || "Unnamed Package"
     },
     {
-      key: "totalAmount", header: "Total Amount",
-      render: (row) => `₹${row.TotalAmount || row.totalAmount || "N/A"}`
+      key: "ServiceList", header: "Services",
+      render: (row) => (
+        <ul className="list-disc pl-4">
+          {Array.isArray(row.ServiceList) && row.ServiceList.length > 0
+            ? row.ServiceList.map((svc, idx) => (
+              <li key={svc.ServiceDetailID || svc.ServiceID || idx} className="mb-1">
+                {svc.ItemName || svc.ServiceName || `Service ${idx + 1}`}{' '}
+              </li>
+            ))
+            : <li className="text-gray-400">No services</li>
+          }
+        </ul>
+      )
+    },
+    {
+      key: "TotalAmount", header: "Total Amount",
+      render: (row) => `₹${row.TotalAmount || "N/A"}`
+    },
+    {
+      key: "PaidAmount", header: "Paid Amount",
+      render: (row) => `₹${getPaidAmount(row).toLocaleString("en-IN")}`
     },
     {
       key: "OrderStatus", header: "Status",
@@ -254,7 +308,7 @@ const MyPackages = () => {
       {loading ? (
         <div className="text-center py-20 text-gray-400 text-sm">Loading packages...</div>
       ) : error ? (
-        <div className="text-center py-20 text-red-500 text-sm">{error}</div>
+        <div className="text-center py-20 text-red-500 text-sm">{apiMessage || error}</div>
       ) : (
         <div className="overflow-x-auto rounded-xl">
         <DataTable

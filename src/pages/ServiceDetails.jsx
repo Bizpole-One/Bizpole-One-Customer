@@ -23,12 +23,12 @@ import {
   FaCogs,
   FaRupeeSign,
   FaTimes,
-  FaPlus,
+  // FaPlus,
   FaCheck,
   FaPhoneAlt
 } from "react-icons/fa";
-import { HiOutlineLocationMarker, HiOutlineCheckCircle } from "react-icons/hi";
-
+// import { HiOutlineLocationMarker, HiOutlineCheckCircle } from "react-icons/hi";
+import { HiOutlineLocationMarker } from "react-icons/hi";
 const ServiceDetails = () => {
   const navigate = useNavigate();
   const { id: SERVICE_ID } = useParams();

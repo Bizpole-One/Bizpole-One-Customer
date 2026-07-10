@@ -5,7 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { getPackagesByServiceType, getAllServiceTypes } from "../api/ServiceType";
 import { upsertQuote } from "../api/Quote";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Calendar, Sparkles, ArrowRight } from "lucide-react";
+// import { Check, Calendar, Sparkles, ArrowRight } from "lucide-react";
+import { Check } from "lucide-react";
 import { setSecureItem, getSecureItem } from "../utils/secureStorage";
 
 const PlansAndPricing = () => {

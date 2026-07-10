@@ -105,7 +105,7 @@ import { getSecureItem, removeSecureItem } from "../utils/secureStorage";
 //   },
 // ];
 
-const STATUS_FILTERS = ["All", "Approved", "In review", "Not Approved", "Disable"];
+const STATUS_FILTERS = ["All", "Approved", "In review", "Not Approved", "Not Uploaded", "Disable"];
 
 
 export default function ServiceSelection() {
@@ -279,6 +279,7 @@ export default function ServiceSelection() {
   // Fetch documents/response fields
   useEffect(() => {
     const serviceCompanyId = selectedService?.CompanyID || selectedService?.companyId || companyId;
+    const serviceQuoteId = selectedService?.QuoteID || navQuoteId;
 
     if (activeTab === "Documents" && serviceCompanyId && selectedService?.ServiceID) {
       setLoadingDocuments(true);
@@ -292,18 +293,37 @@ export default function ServiceSelection() {
             return;
           }
 
-          const allFields = data.results.flatMap((r) => r.fields || []);
+          // The API returns response sets for every company that has ever used
+          // this ServiceID, so only keep the ones belonging to the currently
+          // selected company/quote before flattening fields.
+          const matchingSets = data.results.filter((r) => {
+            const companyMatches = String(r.company_id) === String(serviceCompanyId);
+            const quoteMatches =
+              !serviceQuoteId || r.quote_id == null || String(r.quote_id) === String(serviceQuoteId);
+            return companyMatches && quoteMatches;
+          });
+
+          const allFields = matchingSets.flatMap((r) => r.fields || []);
+
+          // Keep only the latest submission per field (results are ordered
+          // oldest-to-newest, so a later entry overwrites an earlier one).
+          const latestFieldsMap = new Map();
+          allFields.forEach((f) => {
+            const key = f.field_id ?? f.field_key;
+            latestFieldsMap.set(key, f);
+          });
+          const latestFields = Array.from(latestFieldsMap.values());
 
           let verified = [];
 
           if (activeTab === "Documents") {
-            verified = allFields.filter(
+            verified = latestFields.filter(
               (f) => f.verify === 1 || f.verify === 0
             );
           } else if (activeTab === "Task") {
-            verified = allFields.filter((f) => f.verify === 1);
+            verified = latestFields.filter((f) => f.verify === 1);
           } else {
-            verified = allFields.filter((f) => f.verify === 0);
+            verified = latestFields.filter((f) => f.verify === 0);
           }
 
           setVerifiedFields(verified);
@@ -397,6 +417,8 @@ export default function ServiceSelection() {
         return "bg-orange-50 text-orange-500";
       case "Not Approved":
         return "bg-red-50 text-red-500";
+      case "Not Uploaded":
+        return "bg-gray-100 text-gray-600";
       default:
         return "bg-gray-50 text-gray-500";
     }
@@ -467,6 +489,8 @@ export default function ServiceSelection() {
         calculatedStatus = "Approved";
       } else if (anySubmitted) {
         calculatedStatus = "In review";
+      } else if (fields.length > 0) {
+        calculatedStatus = "Not Uploaded";
       }
 
       return {
@@ -989,7 +1013,7 @@ const displayedUpcomingTasks =
           >
             <span>{selectedService?.ItemName || "Choose Services"}</span>
             <span className="w-5 h-5 bg-white rounded-full flex items-center justify-center text-gray-600 text-[10px] font-semibold">
-              9+
+              {companyServices?.services?.length || 0}
             </span>
             <span className="text-gray-700 text-xs">⌄</span>
           </button>
@@ -1179,12 +1203,12 @@ const displayedUpcomingTasks =
             </div>
           {loadingTasks ? (
     <div>Loading...</div>
-) : displayedCurrentTasks.length === 0 ? (
+) : filteredCurrentTasks.length === 0 ? (
     <div className="py-6 text-center text-gray-500">
         No Records Found
     </div>
 ) : (
-    displayedCurrentTasks.map((task) => (
+    filteredCurrentTasks.map((task) => (
         <TaskRow key={task.id} task={task} />
     ))
 )}

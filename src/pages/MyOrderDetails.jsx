@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import CryptoJS from 'crypto-js';
 import { initPayment } from '../api/Orders/Order';
+import { getInvoiceDetails } from '../api/Companyinvoice';
 import { motion } from 'framer-motion';
 import {
   Download,
@@ -46,7 +48,6 @@ const statusChipConfig = {
 const MyOrderDetails = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [showInvoice, setShowInvoice] = useState(false);
 
   // Get order data from navigation state
   const order = location.state?.order || {};
@@ -164,8 +165,12 @@ const MyOrderDetails = () => {
   const [tasksError, setTasksError] = useState(null);
   const [payingOrderId, setPayingOrderId] = useState(null);
 
-  const totalAdvanceAmount = orderItems.reduce((sum, item) => sum + (item.AdvanceAmount ? Number(item.AdvanceAmount) : 0), 0);
-  const totalPendingAmount = orderItems.reduce((sum, item) => sum + (item.PendingAmount ? Number(item.PendingAmount) : 0), 0);
+  const itemsAdvanceAmount = orderItems.reduce((sum, item) => sum + (item.AdvanceAmount ? Number(item.AdvanceAmount) : 0), 0);
+  const itemsPendingAmount = orderItems.reduce((sum, item) => sum + (item.PendingAmount ? Number(item.PendingAmount) : 0), 0);
+  // Orders.ReceivedAmount / Orders.PendingAmount are the source of truth; the per-service
+  // Advance/Pending fields above are legacy fallbacks for orders that predate those columns.
+  const totalAdvanceAmount = order.ReceivedAmount != null ? Number(order.ReceivedAmount) : itemsAdvanceAmount;
+  const totalPendingAmount = order.PendingAmount != null ? Number(order.PendingAmount) : itemsPendingAmount;
 
   const handlePayBalance = async (orderObj) => {
     try {
@@ -207,8 +212,67 @@ const MyOrderDetails = () => {
     }
   };
 
-  const totalAmount = orderItems.reduce((sum, item) => sum + (item.total || 0), 0) || order.TotalAmount || order.totalAmount || 0;
-  const hasPendingAmount = orderItems.some(item => item.PendingAmount && item.PendingAmount > 0);
+  // Orders.TotalAmount is the source of truth; summing per-service `Total` is a
+  // legacy fallback that can miss GST/Gov fee components and drift from the real total.
+  const totalAmount = order.TotalAmount != null
+    ? Number(order.TotalAmount)
+    : order.totalAmount != null
+      ? Number(order.totalAmount)
+      : orderItems.reduce((sum, item) => sum + (item.total || 0), 0);
+  const hasPendingAmount = totalPendingAmount > 0;
+
+  // order.OrderID here can be the OrderCodeId string (e.g. "OR0000123") rather than the
+  // raw numeric primary key — extract the trailing digits so lookups against numeric
+  // OrderID columns (invoiceforservice) get the real ID instead of MySQL coercing a
+  // non-numeric string like "OR0000123" down to 0.
+  const getNumericOrderId = (value) => {
+    if (value == null) return null;
+    const match = String(value).match(/(\d+)\s*$/);
+    return match ? Number(match[1]) : null;
+  };
+
+  // Opens the same invoice preview/PDF flow used in Invoiceprofile.jsx — encrypts the
+  // OrderID into the route param and hands the invoice data through navigation state.
+  // The real invoice number lives in `invoiceforservice.InvoiceCode` (keyed by OrderID),
+  // not on Quote/Orders, so it's fetched via the same getInvoiceDetails API Invoiceprofile.jsx uses.
+  const handleDownloadInvoice = async () => {
+    const numericOrderId = getNumericOrderId(order.OrderID);
+    if (!numericOrderId) return;
+    try {
+      const detailsRes = await getInvoiceDetails([numericOrderId]);
+      const invoiceRows = Array.isArray(detailsRes?.data) ? detailsRes.data : [];
+      const invoiceRow = invoiceRows.find((r) => r.ServiceDetailID == null) || invoiceRows[0] || null;
+
+      const secret = import.meta.env.VITE_QUOTE_LINK_SECRET || 'default_secret';
+      const encryptedOrderId = encodeURIComponent(
+        CryptoJS.AES.encrypt(String(numericOrderId), secret).toString()
+      );
+      const services = Array.isArray(order.ServiceDetails) ? order.ServiceDetails : [];
+      const gst = services.reduce((sum, s) => sum + (parseFloat(s.GstAmount) || 0), 0);
+      const invoiceData = {
+        OrderID: numericOrderId,
+        InvoiceCode: invoiceRow?.InvoiceCode || order.QuoteIDCode || order.OrderCodeId,
+        InvoiceDate: invoiceRow?.InvoiceDate || order.CreatedAt || order.order_date,
+        CompanyName: invoiceRow?.CompanyName || order.CompanyName,
+        PrimaryCustomer: invoiceRow?.PrimaryCustomer || order.PrimaryCustomer,
+        customerName: order.CustomerName,
+        state: order.StateService || order.State,
+        franchiseeId: order.FranchiseeID,
+        FranchiseeName: order.FranchiseeName,
+        quoteCodeId: order.QuoteIDCode,
+        serviceDetails: services,
+        amounts: {
+          total: totalAmount,
+          gst,
+          advance: totalAdvanceAmount,
+          pending: totalPendingAmount,
+        },
+      };
+      navigate(`/profile/invoice-preview/${encryptedOrderId}`, { state: { invoiceData } });
+    } catch (error) {
+      console.error('Error opening invoice preview:', error);
+    }
+  };
 
   const goToTasks = (item) => {
     if (!item?.ServiceDetailsID) return;
@@ -325,7 +389,7 @@ const MyOrderDetails = () => {
               <div className="bg-gray-50 rounded-xl p-3">
                 <p className="text-xs text-gray-400 mb-1">Amount Paid</p>
                 <p className="text-sm font-semibold text-gray-900">
-                  ₹{(totalAdvanceAmount || totalAmount).toLocaleString()}
+                  ₹{totalAdvanceAmount.toLocaleString()}
                 </p>
               </div>
             </div>
@@ -373,7 +437,7 @@ const MyOrderDetails = () => {
                   Contact Support
                 </button>
                 <button
-                  onClick={() => setShowInvoice(true)}
+                  onClick={handleDownloadInvoice}
                   className="flex items-center justify-center gap-2 border border-gray-200 bg-white text-gray-700 px-6 py-2.5 rounded-full text-sm font-medium hover:bg-gray-50 transition-colors"
                 >
                   <Download className="w-4 h-4" />
@@ -390,49 +454,6 @@ const MyOrderDetails = () => {
             </div>
           </motion.div>
         </div>
-
-        {/* Invoice Modal */}
-        {showInvoice && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-            onClick={() => setShowInvoice(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl p-6 max-w-md w-full"
-            >
-              <div className="text-center">
-                <FileText className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-xl font-bold mb-2">Invoice Generation</h3>
-                <p className="text-gray-600 mb-6">
-                  Your invoice for Order #{order.OrderID} will be generated and made available soon.
-                </p>
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => setShowInvoice(false)}
-                    className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      alert('Invoice download feature coming soon!');
-                      setShowInvoice(false);
-                    }}
-                    className="flex-1 bg-amber-500 text-white py-2 rounded-lg hover:bg-amber-600 transition"
-                  >
-                    Download PDF
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
       </motion.div>
     );
   }
@@ -677,7 +698,7 @@ const MyOrderDetails = () => {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowInvoice(true)}
+                  onClick={handleDownloadInvoice}
                   className="w-full flex items-center justify-center gap-2 bg-amber-400 text-black px-6 py-2.5 rounded-full text-sm font-medium hover:bg-amber-500 transition-colors"
                 >
                   <Download className="w-4 h-4" />
@@ -709,7 +730,7 @@ const MyOrderDetails = () => {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => orderItems[0] && goToTasks(orderItems[0])}
+                  onClick={() => navigate('/dashboard/bizpoleone/tasks')}
                   className="w-full flex items-center justify-center gap-2 border border-gray-200 text-gray-700 px-6 py-2.5 rounded-full text-sm font-medium hover:bg-gray-50 transition-colors"
                 >
                   <ClipboardList className="w-4 h-4" />
@@ -719,49 +740,6 @@ const MyOrderDetails = () => {
             </motion.div>
           </div>
         </div>
-
-        {/* Invoice Modal */}
-        {showInvoice && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-            onClick={() => setShowInvoice(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl p-6 max-w-md w-full"
-            >
-              <div className="text-center">
-                <FileText className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-xl font-bold mb-2">Invoice Generation</h3>
-                <p className="text-gray-600 mb-6">
-                  Your invoice for Order #{order.OrderID} will be generated and made available soon.
-                </p>
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => setShowInvoice(false)}
-                    className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-50 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      alert('Invoice download feature coming soon!');
-                      setShowInvoice(false);
-                    }}
-                    className="flex-1 bg-amber-500 text-white py-2 rounded-lg hover:bg-amber-600 transition"
-                  >
-                    Download PDF
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
       </div>
     </motion.div>
   );
