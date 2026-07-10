@@ -94,8 +94,8 @@ const StartYourBusinessContent = ({ onNext }) => {
           border: none; padding: 0; cursor: pointer; border-radius: 18px;
         }
         .rc-inner {
-          border-radius: 18px; padding: 20px 22px;
-          display: flex; align-items: center; gap: 16px;
+          border-radius: 14px; padding: 12px 14px;
+          display: flex; align-items: center; gap: 10px;
           background: #F5C518;
           border: 1.5px solid rgba(0,0,0,0.08);
           box-shadow: 0 2px 10px rgba(0,0,0,0.04);
@@ -117,7 +117,7 @@ const StartYourBusinessContent = ({ onNext }) => {
         .rc:hover .rc-inner::after { transform: scaleX(1); }
 
         .rc-icon {
-          width: 52px; height: 52px; border-radius: 14px; flex-shrink: 0;
+          width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
           background: #fef9e7; border: 1px solid rgba(245,197,24,0.2);
           display: flex; align-items: center; justify-content: center;
           font-size: 22px; transition: all 0.3s;
@@ -125,10 +125,10 @@ const StartYourBusinessContent = ({ onNext }) => {
         .rc:hover .rc-icon { transform: rotate(-8deg) scale(1.1); background: #fef3c7; }
 
         .rc-arrow {
-          width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+          width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
           background: #f3f4f6; border: none;
           display: flex; align-items: center; justify-content: center;
-          font-size: 13px; color: #9ca3af; transition: all 0.3s;
+          font-size: 11px; color: #9ca3af; transition: all 0.3s;
         }
         .rc:hover .rc-arrow { background: #F5C518; color: #1a1a1a; transform: translateX(4px); }
 
@@ -139,21 +139,21 @@ const StartYourBusinessContent = ({ onNext }) => {
 
         /* Sign-in strip */
         .signin-strip {
-          background: #f7f5f0; border-radius: 16px; padding: 18px 22px;
+          background: #f7f5f0; border-radius: 12px; padding: 12px 16px;
           border: 1.5px solid rgba(0,0,0,0.07);
           display: flex; align-items: center; justify-content: space-between;
           gap: 12px; flex-wrap: wrap;
         }
         .signin-btn {
           background: #F5C518; color: #1a1a1a;
-          font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 13px;
-          border-radius: 100px; padding: 10px 24px; border: none; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 12px;
+          border-radius: 100px; padding: 8px 18px; border: none; cursor: pointer;
           transition: all 0.25s; white-space: nowrap;
-          box-shadow: 0 4px 14px rgba(245,197,24,0.4);
+         
         }
         .signin-btn:hover {
           background: #1a1a1a; color: #F5C518;
-          transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+          transform: translateY(-1px); 
         }
 
         /* Left stat pill */
@@ -169,17 +169,16 @@ const StartYourBusinessContent = ({ onNext }) => {
       <SigninModal isOpen={showSigninModal} onClose={() => setShowSigninModal(false)} />
 
       <motion.div
-        className="syb-root w-full max-w-5xl"
+        className="syb-root w-full max-w-5xl border border-yellow-200"
         initial={{ opacity: 0, y: 30, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -30, scale: 0.97 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         style={{
           borderRadius: 28, overflow: "hidden",
-          boxShadow: "0 32px 80px rgba(245,197,24,0.22), 0 8px 32px rgba(0,0,0,0.1)",
         }}
       >
-        <div className="flex flex-col lg:flex-row " style={{ minHeight: 620 }}>
+        <div className="flex flex-col lg:flex-row " style={{ minHeight: 480 }}>
 
           {/* ════ LEFT — YELLOW ════ */}
           <div
@@ -189,19 +188,19 @@ const StartYourBusinessContent = ({ onNext }) => {
               position: "relative", overflow: "hidden",
               display: "flex", flexDirection: "column",
               justifyContent: "space-between",
-              padding: "36px",
+              padding: "24px",
             }}
           >
             {/* Soft orbs */}
-            <FloatingOrb delay={0}   style={{ width: 200, height: 200, top: "-50px",  right: "-50px",  background: "rgba(255,255,255,0.18)", filter: "blur(40px)" }} />
-            <FloatingOrb delay={1.8} style={{ width: 130, height: 130, bottom: "50px", left: "-25px",  background: "rgba(255,255,255,0.13)", filter: "blur(24px)" }} />
-            <FloatingOrb delay={0.9} style={{ width: 70,  height: 70,  bottom: "32%", right: "12%",   background: "rgba(255,255,255,0.2)",  filter: "blur(12px)" }} />
+            <FloatingOrb delay={0} style={{ width: 200, height: 200, top: "-50px", right: "-50px", background: "rgba(255,255,255,0.18)", filter: "blur(40px)" }} />
+            <FloatingOrb delay={1.8} style={{ width: 130, height: 130, bottom: "50px", left: "-25px", background: "rgba(255,255,255,0.13)", filter: "blur(24px)" }} />
+            <FloatingOrb delay={0.9} style={{ width: 70, height: 70, bottom: "32%", right: "12%", background: "rgba(255,255,255,0.2)", filter: "blur(12px)" }} />
 
             {/* Sparkles */}
-            <Sparkle delay={0}   style={{ top: "18%",  left: "12%" }} />
-            <Sparkle delay={0.9} style={{ top: "62%",  right: "16%" }} />
+            <Sparkle delay={0} style={{ top: "18%", left: "12%" }} />
+            <Sparkle delay={0.9} style={{ top: "62%", right: "16%" }} />
             <Sparkle delay={1.7} style={{ bottom: "22%", left: "42%" }} />
-            <Sparkle delay={2.4} style={{ top: "38%",  right: "28%" }} />
+            <Sparkle delay={2.4} style={{ top: "38%", right: "28%" }} />
 
             {/* Rotating dashed rings — centered */}
             <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", pointerEvents: "none", zIndex: 1 }}>
@@ -233,18 +232,18 @@ const StartYourBusinessContent = ({ onNext }) => {
               style={{ position: "relative", zIndex: 4, display: "flex", flexDirection: "column", gap: 20 }}
             >
               {/* Icon with pulse */}
-              <div style={{ position: "relative", width: 78, height: 78 }}>
+              <div style={{ position: "relative", width: 56, height: 56 }}>
                 <div className="pulse-ring" />
                 <div className="pulse-ring pulse-ring-2" />
-              
-             
+
+
               </div>
 
               <div>
-                <h2 className="syb-display" style={{ color: "#f8f8f8", fontSize: "clamp(1.65rem, 2.4vw, 2.1rem)", marginBottom: 10 }}>
+                <h2 className="syb-display" style={{ color: "#f8f8f8", fontSize: "clamp(1.3rem, 2vw, 1.6rem)", marginBottom: 6 }}>
                   Your business<br /> <span className="text-black">journey begins.</span>
                 </h2>
-                <p style={{ color: "rgb(0, 0, 0)", fontSize: 13.5, lineHeight: 1.7, fontWeight: 300, maxWidth: 250 }}>
+                <p style={{ color: "rgb(0, 0, 0)", fontSize: 12, lineHeight: 1.5, fontWeight: 300, maxWidth: 220 }}>
                   Join 50,000+ entrepreneurs who've built and scaled their dream businesses with Bizpole.
                 </p>
               </div>
@@ -274,13 +273,13 @@ const StartYourBusinessContent = ({ onNext }) => {
               backgroundImage: "url('/Images/hero-bg.webp')",
               backgroundSize: "cover", backgroundPosition: "center",
               display: "flex", flexDirection: "column", justifyContent: "center",
-              gap: 22, padding: "36px 40px",
+              gap: 22, padding: "24px 28px",
             }}
           >
             {/* Translucent overlay */}
             <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.9)", pointerEvents: "none" }} />
 
-            <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 22 }}>
+            <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
 
               {/* Heading */}
               <motion.div
@@ -292,7 +291,7 @@ const StartYourBusinessContent = ({ onNext }) => {
                   display: "inline-flex", alignItems: "center", gap: 6,
                   fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase",
                   color: "rgba(26,26,26,0.4)", border: "1px solid rgba(26,26,26,0.1)",
-                  borderRadius: 100, padding: "4px 12px", marginBottom: 12,
+                  borderRadius: 100, padding: "3px 10px", marginBottom: 8,
                 }}>
                   <motion.span
                     style={{ width: 5, height: 5, borderRadius: "50%", background: "#F5C518", display: "inline-block" }}
@@ -302,7 +301,7 @@ const StartYourBusinessContent = ({ onNext }) => {
                   Bizpole Suite
                 </span>
 
-                <h1 className="syb-display" style={{ color: "#1a1a1a", fontSize: "clamp(1.8rem, 3vw, 2.5rem)", marginBottom: 8 }}>
+                <h1 className="syb-display" style={{ color: "#1a1a1a", fontSize: "clamp(1.4rem, 2.4vw, 1.9rem)", marginBottom: 6 }}>
                   Let's talk{" "}
                   <span style={{ position: "relative", display: "inline-block" }}>
                     <span style={{ position: "relative", zIndex: 1 }}>business!</span>
@@ -314,13 +313,13 @@ const StartYourBusinessContent = ({ onNext }) => {
                     />
                   </span>
                 </h1>
-                <p style={{ color: "#9ca3af", fontSize: 14.5, fontWeight: 300, lineHeight: 1.65 }}>
+                <p style={{ color: "#9ca3af", fontSize: 12.5, fontWeight: 300, lineHeight: 1.5 }}>
                   To begin this journey, tell us what type of account you'd be opening.
                 </p>
               </motion.div>
 
               {/* Cards */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {cards.map((card, i) => (
                   <motion.div
                     key={card.id}
@@ -336,15 +335,15 @@ const StartYourBusinessContent = ({ onNext }) => {
                       style={{ fontFamily: "'DM Sans', sans-serif" }}
                     >
                       <div className="rc-inner">
-                       
+
                         <div style={{ flex: 1, textAlign: "left" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                            <span style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 15, color: "#1a1a1a" }}>
+                            <span style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 13, color: "#1a1a1a" }}>
                               {card.title}
                             </span>
                             {card.badge && <span className="rc-badge">{card.badge}</span>}
                           </div>
-                          <span style={{ fontSize: 13, color: "#ffffff", fontWeight: 300 }}>{card.sub}</span>
+                          <span style={{ fontSize: 11.5, color: "#ffffff", fontWeight: 300 }}>{card.sub}</span>
                         </div>
                         <div className="rc-arrow">→</div>
                       </div>
@@ -361,10 +360,11 @@ const StartYourBusinessContent = ({ onNext }) => {
                 transition={{ delay: 0.74, duration: 0.5 }}
               >
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: "#1a1a1a", marginBottom: 2 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12.5, color: "#1a1a1a", marginBottom: 2 }}>
                     Already have an account?
                   </div>
-                  <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 300 }}>
+                  <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 300 }}>
+
                     Sign in to continue where you left off
                   </div>
                 </div>
