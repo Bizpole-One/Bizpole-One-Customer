@@ -76,6 +76,23 @@ const ProgressBar = ({ value = 60 }) => (
 /* ── Progress per status ── */
 const statusProgress = { 1: 0, 2: 20, 3: 60, 4: 100, 5: 50, 6: 0, 7: 0, 8: 0 };
 
+/* ── Amount already paid on an order (Orders.ReceivedAmount, falling back to AdvanceAmount) ── */
+const getPaidAmount = (row) => {
+  if (row.ReceivedAmount != null) return parseFloat(row.ReceivedAmount) || 0;
+  if (row.AdvanceAmount != null) return parseFloat(row.AdvanceAmount) || 0;
+  if (Array.isArray(row.ServiceList)) {
+    return row.ServiceList.reduce((sum, svc) => sum + (parseFloat(svc.AdvanceAmount) || 0), 0);
+  }
+  return 0;
+};
+
+/* ── Amount still owed on an order (PendingAmount if provided, else Total - Paid) ── */
+const getDueAmount = (row) => {
+  if (row.PendingAmount != null) return parseFloat(row.PendingAmount) || 0;
+  const total = parseFloat(row.TotalAmount) || 0;
+  return Math.max(total - getPaidAmount(row), 0);
+};
+
 /* ══════════════════════════════════════════
    Main component
 ══════════════════════════════════════════ */
@@ -136,7 +153,9 @@ const MyIndividualservices = () => {
               groupedOrders.push({
                 ...order,
                 ServiceList: order.ServiceDetails,
-                TotalAmount: order.totalAmount || order.TotalAmount,
+                TotalAmount: order.TotalAmount ?? order.totalAmount,
+                ReceivedAmount: order.ReceivedAmount,
+                PendingAmount: order.PendingAmount,
               });
             }
           });
@@ -189,7 +208,7 @@ const MyIndividualservices = () => {
       (acc, o) => acc + (Array.isArray(o.ServiceList) ? o.ServiceList.length : 0), 0
     );
     const nextDue = individualServices.reduce(
-      (acc, o) => acc + (parseFloat(o.TotalAmount) || 0), 0
+      (acc, o) => acc + getDueAmount(o), 0
     );
     const dates = individualServices
       .map(o => o.CreatedAt ? new Date(o.CreatedAt) : null)
@@ -274,6 +293,10 @@ const MyIndividualservices = () => {
     {
       key: "TotalAmount", header: "Total Amount",
       render: (row) => `₹${row.TotalAmount || "N/A"}`
+    },
+    {
+      key: "PaidAmount", header: "Paid Amount",
+      render: (row) => `₹${getPaidAmount(row).toLocaleString("en-IN")}`
     },
     {
       key: "OrderStatus", header: "Status",
