@@ -2,13 +2,13 @@ import { useEffect } from 'react';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 
-import ComplianceDashboard from '../components/ComplianceDashboard';
 import HeaderStats from '../components/HeaderStats';
-import UpcomingEvents from '../components/UpcomingEvents';
-import ServicesTable from '../components/ServicesTable';
-import ChatSection from '../components/ChatSection';
-import TodayTask from '../components/TodayTask';
-import AdComponent from '../components/AdComponent';
+import SectionTitle from '../components/dashboard/SectionTitle';
+import ComplianceHealth from '../components/dashboard/ComplianceHealth';
+import ServicesActions from '../components/dashboard/ServicesActions';
+import VaultFinance from '../components/dashboard/VaultFinance';
+import SuiteRecommendations from '../components/dashboard/SuiteRecommendations';
+import RelationshipReferral from '../components/dashboard/RelationshipReferral';
 
 const BizpoleOne = () => {
   // Scroll to top when component mounts
@@ -26,34 +26,30 @@ const BizpoleOne = () => {
   }, []);
 
   return (
-    <div className="p-2 sm:p-4 md:p-6 bg-gray-50 min-h-screen">
+    <div className="bg-gray-50 min-h-screen">
+      {/* Topbar + stat cards */}
       <HeaderStats />
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        {/* Left Column */}
-        <div className="lg:col-span-2 space-y-4 md:space-y-6">
-          <ComplianceDashboard />
 
-          {/* Upcoming Events + Teamwork Card */}
-          <div className="w-full flex flex-col md:flex-row bg-white rounded-2xl p-4 md:p-6 gap-6 items-stretch">
-            {/* Left: Upcoming Events */}
-            <div className="flex-1 w-full">
-              <UpcomingEvents />
-            </div>
+      <div className="px-2 pb-10 sm:px-4 md:px-6">
+        {/* ===== Compliance & Health ===== */}
+        <SectionTitle title="Compliance & Health" tag="NEW" />
+        <ComplianceHealth />
 
-            {/* Right: AdComponent */}
-            <div className="w-full md:w-[400px] rounded-2xl p-0 md:p-4 text-white flex flex-col justify-between">
-              <AdComponent />
-            </div>
-          </div>
+        {/* ===== Your Services & Actions ===== */}
+        <SectionTitle title="Your Services & Actions" tag="NEW" />
+        <ServicesActions />
 
-          {/* Services */}
-          <ServicesTable />
-        </div>
+        {/* ===== Document Vault & Finance ===== */}
+        <SectionTitle title="Document Vault & Finance" tag="NEW" />
+        <VaultFinance />
 
-        {/* Right Column */}
-        <div className="space-y-4 md:space-y-6 mt-6 lg:mt-0">
-          <TodayTask />
-          <ChatSection />
+        {/* ===== Recommended ===== */}
+        <SectionTitle title="Recommended for Sunrise Traders" tag="MARKETING" tagColor="amber" />
+        <SuiteRecommendations />
+
+        {/* ===== Relationship & Referral ===== */}
+        <div className="mt-4">
+          <RelationshipReferral />
         </div>
       </div>
     </div>
