@@ -490,6 +490,7 @@ const Tellabout = () => {
 
                 {/* Assignment status */}
                 <AnimatePresence>
+                  
                   {assignLoading && (
                     <motion.div className="ta-status-loading" style={{ marginTop:14 }}
                       initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} exit={{ opacity:0 }}
