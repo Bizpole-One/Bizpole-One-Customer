@@ -91,6 +91,8 @@ import { getAllStates } from "../api/States";
 const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSelectState, stateId, setShowSigninModal }) => {
   const features = service.Features || [];
   const categoryName = service.Category?.CategoryName || service.CategoryName;
+  // API descriptions sometimes come wrapped in literal quote characters — strip them for display
+  const description = (service.description || service.Description || "").trim().replace(/^["']+|["']+$/g, "").trim();
   return (
     <motion.div
       layout
@@ -136,7 +138,7 @@ const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSele
 
         {/* Description */}
         <p className="text-gray-500 text-sm leading-relaxed mb-4 line-clamp-2">
-          {service.Description || "Professional service tailored to meet your specific requirements."}
+          {description || "Professional service tailored to meet your specific requirements."}
         </p>
 
         {/* Features */}

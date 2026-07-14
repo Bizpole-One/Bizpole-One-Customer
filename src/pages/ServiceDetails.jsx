@@ -12,10 +12,6 @@ import {
   FaBuilding,
   FaCheckCircle,
   FaBalanceScale,
-  FaMoneyBillWave,
-  FaFileAlt,
-  FaUsers,
-  FaMapMarkerAlt,
   FaEnvelope,
   FaClipboardCheck,
   FaArrowRight,
@@ -60,6 +56,7 @@ const ServiceDetails = () => {
       setError(null);
       try {
         const res = await getServiceById({ ServiceId: SERVICE_ID });
+        console.log("service", res?.data);
         setService(res?.data || null);
       } catch (err) {
         setError("Failed to fetch service details.", err);
@@ -132,34 +129,39 @@ const ServiceDetails = () => {
       "PAN & TAN",
     ];
 
-  const requirements = [
-    {
-      icon: <FaUsers size={20} />,
-      title: "Minimum 2 directors",
-      desc: "At least two directors are required to register a company.",
-    },
-    {
-      icon: <FaFileAlt size={20} />,
-      title: "A unique name for your business",
-      desc: "Your proposed name must be unique and not already registered.",
-    },
-    {
-      icon: <FaMoneyBillWave size={20} />,
-      title: "Minimum authorised capital of at least ₹1 lakh",
-      desc: "Minimum authorised capital requirement for company registration.",
-    },
-    {
-      icon: <FaMapMarkerAlt size={20} />,
-      title: "A registered office",
-      desc: "A physical address is required for your company's registered office.",
-    },
-  ];
-
   const tabs = [
     { id: "eligibility", label: "ELIGIBILITY CRITERIA", icon: <FaClipboardCheck size={13} /> },
     { id: "documents", label: "DOCUMENTS REQUIRED", icon: <FaFolderOpen size={13} /> },
     { id: "process", label: "PROCESS", icon: <FaCogs size={13} /> },
   ];
+
+  const TAB_CONTENT_ICON = {
+    eligibility: <FaClipboardCheck size={20} />,
+    documents: <FaFolderOpen size={20} />,
+    process: <FaCogs size={20} />,
+  };
+
+  const isRowActive = (row) => row.IsActive === undefined || row.IsActive === null || row.IsActive === 1 || row.IsActive === true;
+
+  // Backed by serviceeligibility / servicedocument / serviceprocedures tables
+  const tabItems = {
+    eligibility: (service?.Eligibility || [])
+      .filter(isRowActive)
+      .map((row) => ({ title: row.EligibilityName })),
+    documents: (service?.Document || [])
+      .filter(isRowActive)
+      .map((row) => ({ title: row.DocumentName })),
+    process: (service?.Procedures || [])
+      .filter(isRowActive)
+      .sort((a, b) => (a.Step ?? 0) - (b.Step ?? 0))
+      .map((row) => ({ title: row.label, desc: `Step ${row.Step}` })),
+  };
+  const activeTabItems = tabItems[activeTab] || [];
+
+  // API descriptions sometimes come wrapped in literal quote characters — strip them for display
+  const stripWrappingQuotes = (text) =>
+    typeof text === "string" ? text.trim().replace(/^["']+|["']+$/g, "").trim() : text;
+  const serviceDescription = stripWrappingQuotes(service?.description || service?.Description);
 
   const isSelected = !!cart[service?.ServiceID];
 
@@ -329,9 +331,9 @@ const ServiceDetails = () => {
                     {service?.Category?.CategoryName || "Incorporation"} &nbsp;·&nbsp; ⏱ {service?.EstimatedTAT || service?.Duration || "7–10"} Days
                   </p>
 
-                  {service?.Description && (
+                  {serviceDescription && (
                     <p className="text-gray-600 text-sm leading-relaxed">
-                      {service.Description}
+                      {serviceDescription}
                     </p>
                   )}
                 </div>
@@ -558,28 +560,36 @@ const ServiceDetails = () => {
 
               {/* Requirements grid */}
               <div className="bg-gray-50 p-5 grid md:grid-cols-2 gap-4">
-                {requirements.map((item, index) => (
-                  <motion.div
-                    key={index}
-                    whileHover={{ scale: 1.02 }}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 + index * 0.07 }}
-                    className="bg-white rounded-xl p-4 shadow-sm flex gap-3 items-start border border-gray-100"
-                  >
-                    <div className="bg-yellow-100 text-yellow-600 p-2.5 rounded-lg shrink-0">
-                      {item.icon}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-sm leading-tight mb-0.5">
-                        {item.title}
-                      </h3>
-                      <p className="text-xs text-gray-500 leading-relaxed">
-                        {item.desc}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                {activeTabItems.length > 0 ? (
+                  activeTabItems.map((item, index) => (
+                    <motion.div
+                      key={index}
+                      whileHover={{ scale: 1.02 }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 + index * 0.07 }}
+                      className="bg-white rounded-xl p-4 shadow-sm flex gap-3 items-start border border-gray-100"
+                    >
+                      <div className="bg-yellow-100 text-yellow-600 p-2.5 rounded-lg shrink-0">
+                        {TAB_CONTENT_ICON[activeTab]}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-gray-900 text-sm leading-tight mb-0.5">
+                          {item.title}
+                        </h3>
+                        {item.desc && (
+                          <p className="text-xs text-gray-500 leading-relaxed">
+                            {item.desc}
+                          </p>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500 md:col-span-2 text-center py-4">
+                    No {tabs.find((t) => t.id === activeTab)?.label.toLowerCase()} available for this service.
+                  </p>
+                )}
               </div>
             </motion.div>
           )}
