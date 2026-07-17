@@ -1,15 +1,17 @@
-import { toast } from "react-toastify";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { useEffect, useState, useContext } from "react";
 import { CartContext } from "../context/CartContext";
 import { useNavigate } from "react-router-dom";
 import { upsertQuote } from "../api/Quote";
 import { getSecureItem } from "../utils/secureStorage";
+import CryptoJS from "crypto-js";
 import ServicesApi from "../api/ServicesApi";
 import axios from "../api/axiosInstance";
 import { fetchFranchiseeGstInfo, calcGstAmount, splitGst } from "../utils/gstCalc";
 import { motion, AnimatePresence } from "framer-motion";
 import SigninModal from "../components/Modals/SigninModal";
-import { Building2, FileText, Scale, CheckCircle2, Wallet, Globe2, Tag, Sparkles, Briefcase, Receipt, FileCheck2, DollarSign, ShoppingCart, MapPin, ArrowRight, X } from "lucide-react";
+import { Building2, FileText, Scale, CheckCircle2, Wallet, Globe2, Tag, Sparkles, Briefcase, Receipt, FileCheck2, DollarSign, ShoppingCart, MapPin, ArrowRight, X, Loader2 } from "lucide-react";
 // Icons
 const IconSearch = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -88,7 +90,13 @@ const getCategoryIcon = (categoryName) => {
 
 import { getAllStates } from "../api/States";
 
-const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSelectState, stateId, setShowSigninModal }) => {
+const buildQuotePreviewUrl = (quoteId) => {
+  const secret = import.meta.env.VITE_QUOTE_LINK_SECRET || "q3!9fKs7@pLzXr84$nmYtB!cVZdQ3";
+  const encrypted = CryptoJS.AES.encrypt(String(quoteId), secret).toString();
+  return `${import.meta.env.VITE_CLIENT_BASE_URL}/quotes/saved-preview/${encodeURIComponent(encrypted)}`;
+};
+
+const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSelectState, stateId, setShowSigninModal, navigate }) => {
   const features = service.Features || [];
   const categoryName = service.Category?.CategoryName || service.CategoryName;
   // API descriptions sometimes come wrapped in literal quote characters — strip them for display
@@ -183,15 +191,12 @@ const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSele
               </button>
 
               <motion.button
-                onClick={() => onSelect(service.ServiceID)}
+                onClick={onSelectState}
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
-                className={`flex-shrink-0 px-4 py-2.5 rounded-xl shadow-md hover:shadow-xl font-semibold text-sm ${isSelected
-                  ? "bg-[#F3C625] text-black"
-                  : "bg-[#F3C625] text-white hover:bg-[#e0b420]"
-                  }`}
+                className="flex-shrink-0 px-4 py-2.5 rounded-xl shadow-md hover:shadow-xl font-semibold text-sm bg-[#F3C625] text-white hover:bg-[#e0b420]"
               >
-                {isSelected ? "Selected" : "Select"}
+                Select
               </motion.button>
             </div>
           ) : (
@@ -221,11 +226,16 @@ const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSele
               {/* Request Quote + Select together */}
               <div className="flex items-center gap-2">
                 <button
-                  className="flex-1 flex items-center justify-center text-xs font-semibold rounded-lg px-3 py-2 border border-yellow-400 text-black hover:bg-yellow-500 transition-colors"
+                  className={`flex-1 flex items-center justify-center text-xs font-semibold rounded-lg px-3 py-2 border transition-colors ${!stateId || !price
+                    ? "border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed"
+                    : "border-yellow-400 text-black hover:bg-yellow-500"
+                    }`}
                   style={{ minHeight: 36 }}
                   type="button"
+                  disabled={!stateId || !price}
                   onClick={async (e) => {
                     e.stopPropagation();
+                    if (!stateId || !price) return;
                     const token = localStorage.getItem('token');
                     if (!token) {
                       setShowSigninModal(true);
@@ -328,8 +338,8 @@ const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSele
                       };
                       payload.is_manual = 0;
                       await upsertQuote(payload);
-                      toast.success("Quote created successfully!");
-                      if (typeof navigate === 'function') navigate("/dashboard/bizpoleone");
+                      toast.success("Requested quote");
+                      navigate("/dashboard/bizpoleone");
                     } catch (err) {
                       toast.error("Failed to create quote. Please try again.", err);
                     }
@@ -339,12 +349,18 @@ const ServiceCard = ({ service, onLearnMore, isSelected, onSelect, price, onSele
                 </button>
 
                 <motion.button
-                  onClick={() => onSelect(service.ServiceID)}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  className={`flex-shrink-0 px-4 py-2 rounded-xl shadow-md hover:shadow-xl font-semibold text-sm ${isSelected
-                    ? "bg-[#F3C625] text-black"
-                    : "bg-[#F3C625] text-white hover:bg-[#e0b420]"
+                  onClick={() => {
+                    if (!price) return;
+                    onSelect(service.ServiceID);
+                  }}
+                  whileHover={price ? { scale: 1.03 } : undefined}
+                  whileTap={price ? { scale: 0.97 } : undefined}
+                  disabled={!price}
+                  className={`flex-shrink-0 px-4 py-2 rounded-xl font-semibold text-sm ${!price
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none"
+                    : isSelected
+                      ? "bg-[#F3C625] text-black shadow-md hover:shadow-xl"
+                      : "bg-[#F3C625] text-white hover:bg-[#e0b420] shadow-md hover:shadow-xl"
                     }`}
                 >
                   {isSelected ? "Selected" : "Select"}
@@ -381,6 +397,7 @@ const Services = () => {
   const [showSigninModal, setShowSigninModal] = useState(false);
   const [selectedStateForModal, setSelectedStateForModal] = useState("");
   const [statesLoading, setStatesLoading] = useState(false);
+  const [proceedingToQuote, setProceedingToQuote] = useState(false);
 
   const navigate = useNavigate();
 
@@ -541,8 +558,9 @@ const Services = () => {
 
   return (
     <>
+      <ToastContainer position="top-right" autoClose={3000} />
       <SigninModal isOpen={showSigninModal} onClose={() => setShowSigninModal(false)} />
-      <div className="min-h-screen mt-20 bg-gray-50">
+      <div className="min-h-screen bg-gray-50">
 
         {/* State selection modal */}
         {showStateModal && (
@@ -836,12 +854,25 @@ const Services = () => {
                         </div>
 
                         <button
-                          className="w-full flex items-center justify-center gap-2 text-sm font-bold text-black bg-[#F3C625] hover:bg-[#e0b420] rounded-2xl px-4 py-3 transition-colors"
+                          className={`w-full flex items-center justify-center gap-2 text-sm font-bold rounded-2xl px-4 py-3 transition-colors ${proceedingToQuote
+                            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                            : "text-black bg-[#F3C625] hover:bg-[#e0b420]"
+                            }`}
+                          disabled={proceedingToQuote}
                           onClick={async () => {
                             const token = localStorage.getItem('token');
                             if (!token) {
                               setShowSigninModal(true);
                               return;
+                            }
+                            setProceedingToQuote(true);
+                            // Open the tab synchronously, tied to this click, so the browser
+                            // doesn't block it — then redirect it once the quote is ready below.
+                            const previewTab = window.open("", "_blank");
+                            if (previewTab) {
+                              previewTab.document.write(
+                                '<title>Loading your quote…</title><body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;color:#666">Loading your quote…</body>'
+                              );
                             }
                             try {
                               const user = getSecureItem("user");
@@ -923,15 +954,39 @@ const Services = () => {
                               };
 
                               payload.is_manual = 0;
-                              await upsertQuote(payload);
-                              navigate("/dashboard/bizpoleone");
+                              const data = await upsertQuote(payload);
+                              const quoteId = data?.QuoteID;
+                              toast.success("Requested quote");
+                              if (quoteId) {
+                                const url = buildQuotePreviewUrl(quoteId);
+                                if (previewTab) {
+                                  previewTab.location.href = url;
+                                } else {
+                                  window.open(url, "_blank");
+                                }
+                              } else if (previewTab) {
+                                previewTab.close();
+                              }
                             } catch (err) {
-                              alert("Failed to create quote. Please try again.", err);
+                              if (previewTab) previewTab.close();
+                              console.error("Error creating quote from cart:", err);
+                              toast.error(err?.response?.data?.message || "Failed to create quote. Please try again.");
+                            } finally {
+                              setProceedingToQuote(false);
                             }
                           }}
                         >
-                          Proceed to Quote
-                          <ArrowRight size={16} strokeWidth={2.5} />
+                          {proceedingToQuote ? (
+                            <>
+                              <Loader2 size={16} strokeWidth={2.5} className="animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              Proceed to Quote
+                              <ArrowRight size={16} strokeWidth={2.5} />
+                            </>
+                          )}
                         </button>
                       </>
                     )}
@@ -1044,6 +1099,7 @@ const Services = () => {
                         stateId={stateId}
                         bulkLoading={bulkLoading}
                         setShowSigninModal={setShowSigninModal}
+                        navigate={navigate}
                       />
                     ))}
                   </div>

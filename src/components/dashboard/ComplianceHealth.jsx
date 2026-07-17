@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { Shield, AlertTriangle, CalendarDays, TrendingUp, ChevronRight } from "lucide-react";
+import useSelectedCompany from "../../hooks/useSelectedCompany";
+import { getComplianceHealth } from "../../api/DashboardApi";
 
 const statusStyles = {
   ok: "bg-green-100 text-green-700",
@@ -12,55 +15,16 @@ const dotColors = {
   red: "bg-red-600",
 };
 
-const breakdown = [
-  { name: "GST Returns", dot: "green", status: "Filed", tone: "ok" },
-  { name: "TDS Payment", dot: "green", status: "Paid", tone: "ok" },
-  { name: "ROC Annual Filing", dot: "amber", status: "Pending", tone: "warn" },
-  { name: "PF / ESI", dot: "red", status: "Due 5 days", tone: "due" },
-  { name: "Income Tax", dot: "green", status: "On track", tone: "ok" },
-];
+const toneFromDot = { green: "ok", amber: "warn", red: "due" };
 
-const alerts = [
-  {
-    bar: "bg-red-600",
-    title: "₹2,500 late fee risk",
-    body: "GSTR-3B not filed — penalty starts after 20 Jul.",
-    cta: "File now",
-  },
-  {
-    bar: "bg-amber-500",
-    title: "PF challan due",
-    body: "Deposit before 15 Jul to avoid interest.",
-    cta: "Pay",
-  },
-  {
-    bar: "bg-blue-600",
-    title: "DIN KYC reminder",
-    body: "Director KYC window opens this month.",
-    cta: "Remind",
-  },
-];
-
-const deadlines = [
-  { d: "15", m: "Jul", title: "PF & ESI Payment", sub: "Statutory · Monthly", status: "Due", tone: "due" },
-  { d: "20", m: "Jul", title: "GSTR-3B Filing", sub: "GST · Monthly summary return", status: "Soon", tone: "warn" },
-  { d: "31", m: "Jul", title: "TDS Return (Q1)", sub: "Income Tax · Quarterly", status: "Soon", tone: "warn" },
-  { d: "30", m: "Sep", title: "ROC Annual Return", sub: "MCA · AOC-4 / MGT-7", status: "Planned", tone: "ok" },
-];
-
-const trend = [
-  { m: "Feb", h: 62 },
-  { m: "Mar", h: 68 },
-  { m: "Apr", h: 71 },
-  { m: "May", h: 78 },
-  { m: "Jun", h: 82 },
-  { m: "Jul", h: 86, active: true },
-];
+const alertBarColor = {
+  urgent: "bg-red-600",
+  warning: "bg-amber-500",
+  info: "bg-blue-600",
+};
 
 const Card = ({ children, className = "" }) => (
-  <div
-    className={`rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm ${className}`}
-  >
+  <div className={`rounded-2xl border border-gray-100 bg-white p-4 md:p-5 shadow-sm ${className}`}>
     {children}
   </div>
 );
@@ -84,11 +48,56 @@ const CardHead = ({ icon: Icon, title, sub, link }) => (
   </div>
 );
 
+const formatTrendMonth = (ym) => {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "short" });
+};
+
 const ComplianceHealth = () => {
+  const { companyId } = useSelectedCompany();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!companyId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    getComplianceHealth(companyId).then((res) => {
+      if (cancelled) return;
+      setData(res.success ? res.data : null);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 animate-pulse">
+        <div className="h-64 rounded-2xl bg-white shadow-sm lg:col-span-2" />
+        <div className="h-64 rounded-2xl bg-white shadow-sm" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card>
+        <p className="text-sm text-gray-500">No compliance data available yet for this company.</p>
+      </Card>
+    );
+  }
+
+  const { score, breakdown, alerts, deadlines, trend } = data;
   const radius = 52;
   const circ = 2 * Math.PI * radius;
-  const score = 86;
   const offset = circ * (1 - score / 100);
+  const maxTrendScore = Math.max(1, ...trend.map((t) => t.score));
 
   return (
     <>
@@ -98,7 +107,7 @@ const ComplianceHealth = () => {
           <CardHead
             icon={Shield}
             title="Compliance Score Breakdown"
-            sub="Why your score is 86 — tap any item to fix"
+            sub={`Why your score is ${score} — tap any item to fix`}
             link="View all"
           />
           <div className="flex flex-col items-center gap-6 sm:flex-row">
@@ -121,25 +130,35 @@ const ComplianceHealth = () => {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <b className="text-3xl font-extrabold text-gray-900">{score}</b>
-                <small className="text-[11px] text-gray-500">Good standing</small>
+                <small className="text-[11px] text-gray-500">
+                  {score >= 80 ? "Good standing" : score >= 50 ? "Needs attention" : "At risk"}
+                </small>
               </div>
             </div>
             {/* Breakdown list */}
             <div className="flex-1 self-stretch">
-              {breakdown.map((row) => (
-                <div
-                  key={row.name}
-                  className="flex items-center justify-between border-b border-dashed border-gray-200 py-2 text-sm last:border-0"
-                >
-                  <span className="flex items-center text-gray-700">
-                    <span className={`mr-2 inline-block h-2 w-2 rounded-full ${dotColors[row.dot]}`} />
-                    {row.name}
-                  </span>
-                  <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${statusStyles[row.tone]}`}>
-                    {row.status}
-                  </span>
-                </div>
-              ))}
+              {breakdown.length === 0 && (
+                <p className="text-sm text-gray-400">No compliances generated yet.</p>
+              )}
+              {breakdown.map((row) => {
+                const tone = toneFromDot[row.dot] || "warn";
+                return (
+                  <div
+                    key={row.name}
+                    className="flex items-center justify-between border-b border-dashed border-gray-200 py-2 text-sm last:border-0"
+                  >
+                    <span className="flex items-center text-gray-700">
+                      <span
+                        className={`mr-2 inline-block h-2 w-2 rounded-full ${dotColors[row.dot] || "bg-gray-400"}`}
+                      />
+                      {row.name}
+                    </span>
+                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${statusStyles[tone]}`}>
+                      {row.status}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </Card>
@@ -147,12 +166,10 @@ const ComplianceHealth = () => {
         <Card>
           <CardHead icon={AlertTriangle} title="Risk Alerts" />
           <div className="space-y-2.5">
+            {alerts.length === 0 && <p className="text-sm text-gray-400">No active risk alerts.</p>}
             {alerts.map((a) => (
-              <div
-                key={a.title}
-                className="flex items-start gap-3 rounded-xl border border-gray-200 p-3"
-              >
-                <span className={`w-1 self-stretch rounded ${a.bar}`} />
+              <div key={a.title} className="flex items-start gap-3 rounded-xl border border-gray-200 p-3">
+                <span className={`w-1 self-stretch rounded ${alertBarColor[a.severity] || "bg-gray-400"}`} />
                 <div className="flex-1">
                   <b className="text-[13px] text-gray-800">{a.title}</b>
                   <p className="mt-0.5 text-xs text-gray-500">{a.body}</p>
@@ -171,14 +188,15 @@ const ComplianceHealth = () => {
         <Card>
           <CardHead icon={CalendarDays} title="Upcoming Deadlines" link="Open calendar" />
           <div>
+            {deadlines.length === 0 && <p className="text-sm text-gray-400">No upcoming deadlines.</p>}
             {deadlines.map((dl) => (
               <div
-                key={dl.title}
+                key={`${dl.title}-${dl.date}`}
                 className="flex items-center gap-3 border-b border-gray-100 py-2.5 last:border-0"
               >
                 <div className="w-12 shrink-0 rounded-lg bg-gray-50 py-1.5 text-center">
-                  <b className="block text-base leading-none text-gray-900">{dl.d}</b>
-                  <small className="text-[10px] uppercase text-gray-500">{dl.m}</small>
+                  <b className="block text-base leading-none text-gray-900">{dl.day}</b>
+                  <small className="text-[10px] uppercase text-gray-500">{dl.month}</small>
                 </div>
                 <div className="flex-1">
                   <b className="text-[13px] text-gray-800">{dl.title}</b>
@@ -194,20 +212,30 @@ const ComplianceHealth = () => {
 
         <Card>
           <CardHead icon={TrendingUp} title="Compliance Score Trend" />
-          <div className="flex h-32 items-end gap-2 pt-2">
-            {trend.map((t) => (
-              <div key={t.m} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
-                <div
-                  className={`w-full rounded-t-lg ${t.active ? "bg-yellow-600" : "bg-yellow-400"}`}
-                  style={{ height: `${t.h}%` }}
-                />
-                <small className="text-[10px] text-gray-400">{t.m}</small>
+          {trend.length === 0 ? (
+            <p className="text-sm text-gray-400">Trend builds up over your first few months with Bizpole.</p>
+          ) : (
+            <>
+              <div className="flex h-32 items-end gap-2 pt-2">
+                {trend.map((t, i) => (
+                  <div key={t.month} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
+                    <div
+                      className={`w-full rounded-t-lg ${i === trend.length - 1 ? "bg-yellow-600" : "bg-yellow-400"}`}
+                      style={{ height: `${Math.max(4, (t.score / maxTrendScore) * 100)}%` }}
+                    />
+                    <small className="text-[10px] text-gray-400">{formatTrendMonth(t.month)}</small>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <p className="mt-3 text-[11px] text-gray-400">
-            Up 24 points since onboarding with Bizpole — a clear, shareable proof of value.
-          </p>
+              {trend.length > 1 && (
+                <p className="mt-3 text-[11px] text-gray-400">
+                  {trend[trend.length - 1].score >= trend[0].score
+                    ? `Up ${trend[trend.length - 1].score - trend[0].score} points since we started tracking — a clear, shareable proof of value.`
+                    : "Keep filing on time to grow your score."}
+                </p>
+              )}
+            </>
+          )}
         </Card>
       </div>
     </>

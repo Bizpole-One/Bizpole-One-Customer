@@ -64,6 +64,7 @@ const PlansAndPricing = () => {
 
       toast.dismiss();
       toast.success(`Package quote created! QuoteCode: ${data.QuoteCode}`);
+      navigate("/dashboard/bizpoleone");
     } catch (err) {
       console.error("Error creating package quote:", err);
       toast.dismiss();

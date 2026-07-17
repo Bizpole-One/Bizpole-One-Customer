@@ -172,7 +172,7 @@ const ChooseBusinessType = ({ onBack }) => {
             {/* Heading */}
             <div style={{ marginBottom: 16 }}>
               <h1 style={{ fontSize: 19, fontWeight: 700, color: "#1a1a1a", marginBottom: 4 }}>
-                Choose Your Business Type
+                Choose Your Business Type 
               </h1>
               <p style={{ fontSize: 11, color: "#9ca3af" }}>
                 Select the business structure that best suits your needs and goals.

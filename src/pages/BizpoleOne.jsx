@@ -5,12 +5,16 @@ import 'aos/dist/aos.css';
 import HeaderStats from '../components/HeaderStats';
 import SectionTitle from '../components/dashboard/SectionTitle';
 import ComplianceHealth from '../components/dashboard/ComplianceHealth';
+import QuotesList from '../components/dashboard/QuotesList';
 import ServicesActions from '../components/dashboard/ServicesActions';
 import VaultFinance from '../components/dashboard/VaultFinance';
 import SuiteRecommendations from '../components/dashboard/SuiteRecommendations';
 import RelationshipReferral from '../components/dashboard/RelationshipReferral';
+import useSelectedCompany from '../hooks/useSelectedCompany';
 
 const BizpoleOne = () => {
+  const { companyName } = useSelectedCompany();
+
   // Scroll to top when component mounts
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -35,6 +39,10 @@ const BizpoleOne = () => {
         <SectionTitle title="Compliance & Health" tag="NEW" />
         <ComplianceHealth />
 
+        {/* ===== Quotes ===== */}
+        <SectionTitle title="Quotes" tag="NEW" />
+        <QuotesList />
+
         {/* ===== Your Services & Actions ===== */}
         <SectionTitle title="Your Services & Actions" tag="NEW" />
         <ServicesActions />
@@ -44,7 +52,7 @@ const BizpoleOne = () => {
         <VaultFinance />
 
         {/* ===== Recommended ===== */}
-        <SectionTitle title="Recommended for Sunrise Traders" tag="MARKETING" tagColor="amber" />
+        <SectionTitle title={`Recommended for ${companyName || "You"}`} tag="MARKETING" tagColor="amber" />
         <SuiteRecommendations />
 
         {/* ===== Relationship & Referral ===== */}

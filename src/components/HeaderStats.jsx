@@ -1,54 +1,87 @@
+import { useEffect, useState } from "react";
 import { Shield, Settings, Pin, Calendar, Search, Download, Bell } from "lucide-react";
+import useSelectedCompany from "../hooks/useSelectedCompany";
+import { getDashboardStats } from "../api/DashboardApi";
 
-const HeaderStats = () => {
-  const stats = [
+const CARD_META = {
+  complianceScore: { icon: Shield, label: "Compliance Score", barColor: "bg-yellow-500" },
+  activeServices: { icon: Settings, label: "Active Services", barColor: "bg-yellow-500" },
+  pendingActions: { icon: Pin, label: "Pending Actions", barColor: "bg-red-500" },
+  nextDeadline: { icon: Calendar, label: "Next Deadline", barColor: "bg-amber-500" },
+};
+
+const formatDate = (iso) =>
+  iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "";
+
+const buildStats = (data) => {
+  if (!data) return [];
+  const { complianceScore, activeServices, pendingActions, nextDeadline } = data;
+
+  const cards = [
     {
-      id: 1,
-      icon: Shield,
-      label: "Compliance Score",
-      value: "86",
+      key: "complianceScore",
+      value: String(complianceScore.value),
       suffix: "/100",
-      delta: "▲ +4 pts",
-      deltaTone: "up",
+      delta:
+        complianceScore.deltaPts === null
+          ? "—"
+          : `${complianceScore.deltaPts >= 0 ? "▲ +" : "▼ "}${Math.abs(complianceScore.deltaPts)} pts`,
+      deltaTone: complianceScore.deltaPts === null ? "up" : complianceScore.deltaTone,
       note: "vs last month",
-      progress: 86,
-      barColor: "bg-yellow-500",
+      progress: complianceScore.value,
     },
     {
-      id: 2,
-      icon: Settings,
-      label: "Active Services",
-      value: "7",
-      delta: "▲ 2 new",
+      key: "activeServices",
+      value: String(activeServices.count),
+      delta: activeServices.newThisQuarter > 0 ? `▲ ${activeServices.newThisQuarter} new` : "No change",
       deltaTone: "up",
       note: "this quarter",
-      progress: 64,
-      barColor: "bg-yellow-500",
+      progress: Math.min(100, activeServices.count * 10),
     },
     {
-      id: 3,
-      icon: Pin,
-      label: "Pending Actions",
-      value: "3",
-      delta: "▲ needs you",
-      deltaTone: "down",
-      note: "2 uploads, 1 approval",
-      progress: 40,
-      barColor: "bg-red-500",
+      key: "pendingActions",
+      value: String(pendingActions.count),
+      delta: pendingActions.count > 0 ? "▲ needs you" : "✓ all clear",
+      deltaTone: pendingActions.count > 0 ? "down" : "up",
+      note: pendingActions.breakdown,
+      progress: pendingActions.count > 0 ? Math.min(100, pendingActions.count * 20) : 100,
     },
     {
-      id: 4,
-      icon: Calendar,
-      label: "Next Deadline",
-      value: "5",
-      suffix: " days",
-      delta: "GSTR-3B due",
-      deltaTone: "down",
-      note: "20 Jul",
-      progress: 80,
-      barColor: "bg-amber-500",
+      key: "nextDeadline",
+      value: nextDeadline ? String(nextDeadline.daysLeft) : "—",
+      suffix: nextDeadline ? " days" : "",
+      delta: nextDeadline ? nextDeadline.label : "No deadlines due",
+      deltaTone: nextDeadline && nextDeadline.daysLeft <= 7 ? "down" : "up",
+      note: nextDeadline ? formatDate(nextDeadline.date) : "",
+      progress: nextDeadline ? Math.max(5, 100 - nextDeadline.daysLeft * 4) : 0,
     },
   ];
+
+  return cards.map((c) => ({ ...c, ...CARD_META[c.key] }));
+};
+
+const HeaderStats = () => {
+  const { companyId, companyName } = useSelectedCompany();
+  const [stats, setStats] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!companyId) {
+      setStats([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    getDashboardStats(companyId).then((res) => {
+      if (cancelled) return;
+      setStats(res.success ? buildStats(res.data) : []);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   return (
     <header className="w-full px-2 py-6 sm:px-4 md:px-6">
@@ -62,7 +95,7 @@ const HeaderStats = () => {
             </span>
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Welcome back, <b className="text-gray-700">Sunrise Traders Pvt. Ltd.</b> — here's
+            Welcome back, <b className="text-gray-700">{companyName || "your business"}</b> — here's
             your business at a glance.
           </p>
         </div>
@@ -87,55 +120,63 @@ const HeaderStats = () => {
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        {stats.map((item) => {
-          const Icon = item.icon;
-          return (
-            <div
-              key={item.id}
-              className="group bg-white shadow-md rounded-xl p-3.5 hover:shadow-lg transition cursor-pointer"
-            >
-              {/* Top row: label + value / icon */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                    {item.label}
-                  </p>
-                  <p className="mt-0.5 text-xl font-bold text-indigo-900">
-                    {item.value}
-                    {item.suffix && (
-                      <small className="text-xs font-medium text-gray-400">
-                        {item.suffix}
-                      </small>
-                    )}
-                  </p>
-                </div>
-                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 transition group-hover:bg-yellow-500">
-                  <Icon className="w-4 h-4 text-yellow-500 transition group-hover:text-white" />
-                </div>
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="animate-pulse rounded-xl bg-white p-3.5 shadow-md">
+                <div className="h-3 w-20 rounded bg-gray-100" />
+                <div className="mt-2 h-6 w-14 rounded bg-gray-100" />
+                <div className="mt-3 h-1 w-full rounded-full bg-gray-100" />
               </div>
-
-              {/* Delta + note */}
-              <div className="mt-2 flex items-center gap-1.5">
-                <span
-                  className={`text-[11px] font-semibold ${
-                    item.deltaTone === "up" ? "text-green-600" : "text-red-500"
-                  }`}
+            ))
+          : stats.map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.key}
+                  className="group bg-white shadow-md rounded-xl p-3.5 hover:shadow-lg transition cursor-pointer"
                 >
-                  {item.delta}
-                </span>
-                <span className="text-[10px] text-gray-400">{item.note}</span>
-              </div>
+                  {/* Top row: label + value / icon */}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                        {item.label}
+                      </p>
+                      <p className="mt-0.5 text-xl font-bold text-indigo-900">
+                        {item.value}
+                        {item.suffix && (
+                          <small className="text-xs font-medium text-gray-400">
+                            {item.suffix}
+                          </small>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 transition group-hover:bg-yellow-500">
+                      <Icon className="w-4 h-4 text-yellow-500 transition group-hover:text-white" />
+                    </div>
+                  </div>
 
-              {/* Progress bar */}
-              <div className="mt-2 h-1 w-full rounded-full bg-gray-100 overflow-hidden">
-                <span
-                  className={`block h-full rounded-full ${item.barColor}`}
-                  style={{ width: `${item.progress}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
+                  {/* Delta + note */}
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span
+                      className={`text-[11px] font-semibold ${
+                        item.deltaTone === "up" ? "text-green-600" : "text-red-500"
+                      }`}
+                    >
+                      {item.delta}
+                    </span>
+                    <span className="text-[10px] text-gray-400">{item.note}</span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="mt-2 h-1 w-full rounded-full bg-gray-100 overflow-hidden">
+                    <span
+                      className={`block h-full rounded-full ${item.barColor}`}
+                      style={{ width: `${item.progress}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
       </div>
     </header>
   );

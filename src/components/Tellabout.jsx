@@ -5,6 +5,7 @@ import { ArrowRight, ChevronDown } from "lucide-react";
 import { assignCustomer, createCustomer } from "../api/CustomerApi";
 import { getAllStates } from "../api/States";
 import { setSecureItem } from "../utils/secureStorage";
+import { notifyTokenSet } from "../utils/authSession";
 
 // ── Brand decorations ─────────────────────────────────────────────────────────
 function FloatingOrb({ style, delay = 0 }) {
@@ -133,7 +134,7 @@ const Tellabout = () => {
       const company = { ...updatedFormData.Companies[0], BusinessName:updatedFormData.Companies[0].BusinessName, CompanyEmail:updatedFormData.Companies[0].CompanyEmail, CompanyMobile:updatedFormData.Companies[0].CompanyMobile, Country:"India", State:updatedFormData.State, City:"null", District:updatedFormData.District, Agents:agentId?[{EmployeeID:agentId}]:[], CompanyPAN:updatedFormData.Companies[0].CompanyPAN, GSTNumber:updatedFormData.Companies[0].GSTNumber, CIN:updatedFormData.Companies[0].CIN, ConstitutionCategory:updatedFormData.Companies[0].ConstitutionCategory, Sector:updatedFormData.Companies[0].Sector, BusinessNature:updatedFormData.Companies[0].BusinessNature, Website:updatedFormData.Companies[0].Website, AssociateID:AID, isAssociate:isAss, PinCode:updatedFormData.PinCode, PrimaryCompany:1 };
       const payload = { ...updatedFormData, Companies:[company], isAssociate:isAss, AssociateID:AID };
       const res = await createCustomer(payload);
-      if (res?.data?.token) { localStorage.setItem('token', res.data.token); setSecureItem('user', JSON.stringify(res.data.user)); }
+      if (res?.data?.token) { localStorage.setItem('token', res.data.token); notifyTokenSet(); setSecureItem('user', JSON.stringify(res.data.user)); }
       if (location?.state) { setSecureItem('location', JSON.stringify(location.state)); }
       const typeId = location?.state?.type || null;
       navigate("/startbusiness/subscriptions", { state:{ type:typeId } });
