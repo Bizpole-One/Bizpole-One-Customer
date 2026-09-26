@@ -558,6 +558,11 @@ export const TRADEMARK_FLOW = {
   // the lead-capture modal's own country/state (no addressPrefix to read).
   autoLeadGate: true,
   companyNameFor: (A) => A.tm_ownerName,
+  // Sign-up (OTP) + Customer/Company creation happen when "Run Public
+  // Trademark Search" is clicked (see FlowRunner's TmSearchBody), so the
+  // owner fields that Company needs live on that step. Continue from it then
+  // converts the Lead to a Deal — see FlowRunner's goNext().
+  convertAtStep: "search",
   steps: () => [
     { id: "nature", title: "Nature of Business", fields: [cardsField("tm_nature", "What is the nature of your business?", TM_NATURE, { cols: 3 })] },
     { id: "product", title: "Business / Product / Service Details", fields: [
@@ -567,7 +572,10 @@ export const TRADEMARK_FLOW = {
     { id: "recommend", title: "Recommended Trademark Class", type: "aiClassFinder" },
     { id: "class", title: "Confirm / Modify Class", type: "tmClassConfirm" },
     { id: "mark", title: "Enter Proposed Trademark / Brand Name", fields: [textField("tm_name", "Proposed trademark / brand name", { full: true, hint: "Exactly as you want it registered." })] },
-    { id: "search", title: "Public Trademark Search", type: "tmSearch" },
+    { id: "search", title: "Public Trademark Search", type: "tmSearch", fields: [
+      cardsField("tm_ownerType", "Who owns the trademark?", ["Individual", "Company", "LLP", "Partnership", "Other"], { cols: 3, full: true }),
+      textField("tm_ownerName", "Owner name (as per records)", { full: true }),
+    ] },
     { id: "results", title: "Search Results", type: "tmResults" },
     { id: "assessment", title: "Search Assessment", fields: [
       { type: "tmRisk", full: true },
@@ -579,8 +587,6 @@ export const TRADEMARK_FLOW = {
         { showIf: (A) => A.tm_proceed === "No, I want to choose a different name", full: true }),
     ] },
     { id: "owner", title: "Applicant Details", fields: [
-      cardsField("tm_ownerType", "Who owns the trademark?", ["Individual", "Company", "LLP", "Partnership", "Other"], { cols: 3, full: true }),
-      textField("tm_ownerName", "Owner name (as per records)", { full: true }),
       textField("tm_ownerEmail", "Email", { pattern: "email", type: "email", required: (A) => !isMinor(A.tm_owner_dob) }),
       textField("tm_ownerMobile", "Mobile", { pattern: "mobile", type: "tel", required: (A) => !isMinor(A.tm_owner_dob) }),
       textField("tm_ownerPan", "PAN", { pattern: "pan", required: false }),
@@ -798,8 +804,24 @@ export const FLOWS = {
   // (concatenated into an Existing Company flow that already has its own
   // lead-capture step/modal — see the .steps() calls further down).
   "trademark": { ...TRADEMARK_FLOW, kind: "New Company", steps: () => [{ id: "lead", title: "Details", type: "leadDetails" }, ...TRADEMARK_FLOW.steps()] },
-  "msme": { ...MSME_FLOW, kind: "New Company", steps: () => [{ id: "lead", title: "Details", type: "leadDetails" }, ...MSME_FLOW.steps()] },
-  "iec": { ...IEC_FLOW, kind: "New Company", steps: (A) => [{ id: "lead", title: "Details", type: "leadDetails" }, ...IEC_FLOW.steps(A)] },
+  // Staged conversion (see FlowRunner's goNext()): Customer + Company (and
+  // auto sign-up) on Continue from Applicant Details, Deal on Continue from
+  // Bank Details. The Quote is created only when "Review & Approve Quote" is
+  // clicked on Payment (doPay), and the Order by the backend once that
+  // Quote's payment succeeds.
+  "msme": {
+    ...MSME_FLOW, kind: "New Company",
+    customerAtStep: "applicant", dealAtStep: "bank",
+    steps: () => [{ id: "lead", title: "Details", type: "leadDetails" }, ...MSME_FLOW.steps()],
+  },
+  // Same staging as "msme": Customer + Company (+ auto sign-up) on Continue
+  // from Business Address, Deal on Continue from Authorized Person, Quote on
+  // "Review & Approve Quote" (doPay), Order by the backend on payment success.
+  "iec": {
+    ...IEC_FLOW, kind: "New Company",
+    customerAtStep: "address", dealAtStep: "auth",
+    steps: (A) => [{ id: "lead", title: "Details", type: "leadDetails" }, ...IEC_FLOW.steps(A)],
+  },
 
   "other-generic": {
     name: "Other Registration", code: "OTH", price: 2999, govt: 1000, kind: "Existing Company",
@@ -829,6 +851,25 @@ export const FLOWS = {
         docStep(["PAN", "Aadhaar / ID Proof", "Business Address Proof", "Photograph", "Business Registration Certificate", "Other Supporting Document"]),
       ];
     },
+  },
+
+  // FSSAI from the "Start a New Company" → Other Registrations menu — the
+  // same steps as "other-generic" (which the Existing Company menu still uses
+  // as-is), plus a leadDetails Step 1 and the same staging as "msme"/"iec":
+  // Lead on Details, Customer + Company (+ auto sign-up) on Continue from
+  // Address, Deal on Continue from Authorized Person, Quote on "Review &
+  // Approve Quote" (doPay), Order by the backend on payment success.
+  // No matching ServiceMaster entry yet — its Quote line ships with ServiceID: null.
+  "fssai": {
+    name: "FSSAI / Food License", code: "FSSAI", price: 2999, govt: 1000, kind: "New Company",
+    autoLeadGate: true,
+    companyNameFor: (A) => A.other_bizname,
+    addressPrefix: "other",
+    customerAtStep: "address", dealAtStep: "auth",
+    steps: (A) => [
+      { id: "lead", title: "Details", type: "leadDetails" },
+      ...FLOWS["other-generic"].steps({ ...A, other_service: A.other_service || "FSSAI / Food License" }),
+    ],
   },
 
   "ex-business": {

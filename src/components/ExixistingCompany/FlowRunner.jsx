@@ -54,6 +54,9 @@ function freshState(flowId, initialSet) {
     leadGate: null,
     leadCaptured: false,
     leadContact: null,
+    // True once the applicant is a signed-in Customer (OTP verified in
+    // LeadCaptureModal, or already signed in) — see requireVerifiedCustomer().
+    otpVerified: false,
     // Set once the Directors/Shareholders step is completed and the applicant's
     // Customer + Company records are created (see syncCustomerCompany()).
     customerId: null,
@@ -75,6 +78,27 @@ function freshState(flowId, initialSet) {
 // lead has already been captured, otherwise opens the LeadCaptureModal first.
 function requireLead(state, bump, run) {
   if (state.leadCaptured) { run(); return; }
+  state.leadGate = { run };
+  bump();
+}
+
+// Stricter than requireLead: the applicant must be a signed-in Customer (mobile
+// verified by OTP) before `run` — used where a Customer/Company gets created
+// (Trademark's Public Trademark Search). Flows whose Step 1 is the no-OTP
+// "leadDetails" form have a Lead by now but no sign-in yet, so this still
+// opens LeadCaptureModal, which then only verifies (no second Lead).
+function requireVerifiedCustomer(state, bump, run) {
+  if (!state.otpVerified) {
+    try {
+      const raw = getSecureItem("user");
+      const user = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (localStorage.getItem("token") && user?.CustomerID) {
+        state.customerId = state.customerId || user.CustomerID;
+        state.otpVerified = true;
+      }
+    } catch { /* not signed in */ }
+  }
+  if (state.otpVerified && state.leadCaptured) { run(); return; }
   state.leadGate = { run };
   bump();
 }
@@ -308,24 +332,32 @@ function validateStep(step, A, state) {
     if (A.br_objectiveAccepted !== "Yes") errors.br_objective = "Please review and accept the business objective to continue";
     if (!A.br_nicCode) errors.br_nicCode = "Select a NIC code to continue";
   } else if (step.type === "tmSearch") {
+    // The owner fields on this step (what the Company is created from) are
+    // checked too — see TmSearchBody.
+    validateFields(step, A, errors);
     if (!tmSearchIsCurrent(A, state)) errors.__search = "Run the public trademark search to continue";
   } else {
-    visibleFields(step, A).forEach((f) => {
-      if (f.type === "note" || !f.k) return;
-      // `required` can be a function of the answers so far (e.g. relaxed for a minor
-      // whose nominee covers their PAN/email/mobile instead) — resolve it here.
-      const required = typeof f.required === "function" ? f.required(A) : f.required;
-      const e = fieldError({ ...f, required }, A[f.k]);
-      if (e) errors[f.k] = e;
-      if (A[f.k] === "Other" && f.type === "cards" && f.otherText !== false) {
-        const oe = fieldError({ required: true }, A[f.k + "__other"]);
-        if (oe) errors[f.k + "__other"] = "Please specify";
-      }
-    });
+    validateFields(step, A, errors);
     if (step.id === "proceed" && A.tm_proceed === "No, I want to choose a different name") {
       errors.tm_proceed = "Go back and update the trademark name, or select 'Yes, proceed' to continue.";
     }
   }
+  return errors;
+}
+
+function validateFields(step, A, errors) {
+  visibleFields(step, A).forEach((f) => {
+    if (f.type === "note" || !f.k) return;
+    // `required` can be a function of the answers so far (e.g. relaxed for a minor
+    // whose nominee covers their PAN/email/mobile instead) — resolve it here.
+    const required = typeof f.required === "function" ? f.required(A) : f.required;
+    const e = fieldError({ ...f, required }, A[f.k]);
+    if (e) errors[f.k] = e;
+    if (A[f.k] === "Other" && f.type === "cards" && f.otherText !== false) {
+      const oe = fieldError({ required: true }, A[f.k + "__other"]);
+      if (oe) errors[f.k + "__other"] = "Please specify";
+    }
+  });
   return errors;
 }
 
@@ -499,7 +531,32 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
     // flow.convertAtStep (e.g. GST's Business Location) narrows this to one
     // step: Customer → Company → Deal run in order there, and Continue waits
     // for them (that's also where the applicant gets signed in).
-    if (flow.convertAtStep) {
+    //
+    // flow.customerAtStep / dealAtStep (e.g. MSME) split that into stages
+    // instead: Customer → Company (+ auto sign-up) at one step, the Deal at a
+    // later one — each awaited before advancing. The Quote stays with the
+    // Payment step's "Review & Approve Quote" button (doPay). Each call is
+    // guarded, so revisiting a step never creates a duplicate; the Deal step
+    // re-attempts the Customer/Company sync first in case that earlier
+    // attempt failed.
+    if (flow.customerAtStep || flow.dealAtStep) {
+      let work = null;
+      if (step.id === flow.customerAtStep) {
+        work = () => syncCustomerCompany(state, A, bump, flow);
+      } else if (step.id === flow.dealAtStep) {
+        work = () => syncCustomerCompany(state, A, bump, flow).then(() => createDealForApplication(flow, state, A, bump));
+      }
+      if (work) {
+        if (leadSaving) return;
+        setLeadSaving(true);
+        work().finally(() => {
+          setLeadSaving(false);
+          state.stepIndex = Math.min(state.stepIndex + 1, steps.length - 1);
+          bump();
+        });
+        return;
+      }
+    } else if (flow.convertAtStep) {
       if (step.id === flow.convertAtStep) {
         if (leadSaving) return;
         setLeadSaving(true);
@@ -612,7 +669,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
             {step.type === "objective" && <ObjectiveBody A={A} errors={errorsRef.current} setAnswer={setAnswer} />}
             {step.type === "aiClassFinder" && <AiClassFinderBody A={A} setAnswer={setAnswer} state={state} bump={bump} />}
             {step.type === "tmClassConfirm" && <TmClassConfirmBody A={A} onChangeClass={() => { state.stepIndex = steps.findIndex((s) => s.id === "recommend"); bump(); }} />}
-            {step.type === "tmSearch" && <TmSearchBody A={A} state={state} errors={errorsRef.current} setAnswer={setAnswer} bump={bump} />}
+            {step.type === "tmSearch" && <TmSearchBody flow={flow} step={step} A={A} state={state} errors={errorsRef.current} setAnswer={setAnswer} bump={bump} liveStateNames={liveStateNames} />}
             {step.type === "tmResults" && <TmResultsBody A={A} state={state} />}
             {!step.type && <FieldsBody step={step} A={A} errors={errorsRef.current} setAnswer={setAnswer} state={state} bump={bump} liveStateNames={liveStateNames} />}
 
@@ -626,7 +683,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
                     </button>
                   )}
                   <button onClick={goNext} disabled={leadSaving} className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60">
-                    {step.type === "review" ? "Proceed to Payment →" : leadSaving ? "Saving…" : "Continue →"}
+                    {leadSaving ? "Saving…" : step.type === "review" ? "Proceed to Payment →" : "Continue →"}
                   </button>
                 </div>
               </div>
@@ -857,20 +914,19 @@ const LEAD_LANGUAGES = [
    fields live on state.leadForm, validateStep() checks them, and the
    wizard's own "Continue →" raises the Lead (captureLeadDetails) and moves on.
 --------------------------------------------------------------------------- */
-async function captureLeadDetails(state) {
-  const form = state.leadForm;
-  // Already raised on an earlier pass — just keep the contact details current.
-  if (state.leadCaptured && state.leadContact) {
-    state.leadContact = { ...state.leadContact, ...form };
-    return;
-  }
-  try {
-    const raw = getSecureItem("user");
-    const user = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (user?.CustomerID) state.customerId = user.CustomerID;
-  } catch { /* not signed in — fine */ }
+// Raises the Lead from a contact form (Details step or LeadCaptureModal).
+// Franchisee assignment is best-effort: /assignCustomer 404s when no
+// franchisee matches the state/language, and that must not stop the Lead
+// itself — createLead routes an owner on its own when franchiseeId is absent.
+async function raiseLead(state, form) {
+  let franchiseeId = null;
   try {
     const assignment = await assignCustomer({ language: form.language, state: form.state, district: form.state });
+    franchiseeId = assignment?.franchiseeId || null;
+  } catch (err) {
+    console.warn("Franchisee assignment failed (non-fatal, lead still created):", err);
+  }
+  try {
     const res = await createLead({
       name: form.name.trim(),
       state: form.state,
@@ -879,19 +935,35 @@ async function captureLeadDetails(state) {
       proposed_service: state.serviceType,
       preferred_language: form.language,
       lead_source: `startbusiness-${state.flowId}`,
-      franchiseeId: assignment?.franchiseeId,
+      ...(franchiseeId ? { franchiseeId } : {}),
     });
     state.leadContact = {
       ...form,
       leadId: res?.lead?.id || null,
-      franchiseeId: assignment?.franchiseeId || null,
+      franchiseeId,
       employeeId: res?.assignedEmployeeId || null,
     };
   } catch (err) {
     console.error("Lead capture failed (non-fatal):", err);
-    state.leadContact = { ...form, leadId: null, franchiseeId: null, employeeId: null };
+    state.leadContact = { ...form, leadId: null, franchiseeId, employeeId: null };
   }
   state.leadCaptured = true;
+}
+
+async function captureLeadDetails(state) {
+  const form = state.leadForm;
+  // Already raised on an earlier pass — just keep the contact details current.
+  // A pass whose createLead failed (leadId null) retries instead.
+  if (state.leadCaptured && state.leadContact?.leadId) {
+    state.leadContact = { ...state.leadContact, ...form };
+    return;
+  }
+  try {
+    const raw = getSecureItem("user");
+    const user = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (user?.CustomerID) state.customerId = user.CustomerID;
+  } catch { /* not signed in — fine */ }
+  await raiseLead(state, form);
 }
 
 function LeadDetailsBody({ state, errors, bump }) {
@@ -974,9 +1046,15 @@ function LeadDetailsBody({ state, errors, bump }) {
 --------------------------------------------------------------------------- */
 function LeadCaptureModal({ state, bump }) {
   const [states, setStates] = useState([]);
-  const [form, setForm] = useState({ name: "", mobile: "", email: "", country: "India", state: "", language: "" });
+  // Already entered on a "leadDetails" Step 1 (Lead raised, just not verified
+  // yet) — prefill from it and go straight to the details form to confirm.
+  const lc = state.leadContact;
+  const [form, setForm] = useState({
+    name: lc?.name || "", mobile: lc?.mobile || "", email: lc?.email || "",
+    country: lc?.country || "India", state: lc?.state || "", language: lc?.language || "",
+  });
   // phase: "intro" (why sign up) -> "details" (contact form) -> "otp" (verify code) -> "done" (auto-continues)
-  const [phase, setPhase] = useState("intro");
+  const [phase, setPhase] = useState(lc ? "details" : "intro");
   const [accountMode, setAccountMode] = useState("login"); // "login" (existing account) | "signup" (first time)
   const [submitting, setSubmitting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -1079,29 +1157,15 @@ function LeadCaptureModal({ state, bump }) {
   // (routing/CRM hiccup) shouldn't strand the applicant on this modal.
   async function completeLeadCapture(user) {
     if (user?.CustomerID) state.customerId = user.CustomerID;
-    try {
-      const assignment = await assignCustomer({ language: form.language, state: form.state, district: form.state });
-      const res = await createLead({
-        name: form.name.trim(),
-        state: form.state,
-        mobile: form.mobile.trim(),
-        email: form.email.trim(),
-        proposed_service: state.serviceType,
-        preferred_language: form.language,
-        lead_source: `startbusiness-${state.flowId}`,
-        franchiseeId: assignment?.franchiseeId,
-      });
-      state.leadContact = {
-        ...form,
-        leadId: res?.lead?.id || null,
-        franchiseeId: assignment?.franchiseeId || null,
-        employeeId: res?.assignedEmployeeId || null,
-      };
-    } catch (err) {
-      console.error("Lead capture failed (non-fatal — already signed in):", err);
-      state.leadContact = { ...form, leadId: null, franchiseeId: null, employeeId: null };
+    state.otpVerified = true;
+    // Lead already raised by the no-OTP Details step — keep it, just refresh
+    // the contact details in case they were corrected here.
+    if (state.leadCaptured && state.leadContact?.leadId) {
+      state.leadContact = { ...state.leadContact, ...form };
+      setPhase("done");
+      return;
     }
-    state.leadCaptured = true;
+    await raiseLead(state, form);
     setPhase("done");
   }
 
@@ -1892,22 +1956,39 @@ function TmClassConfirmBody({ A, onChangeClass }) {
     </div>
   );
 }
-function TmSearchBody({ A, state, errors, bump }) {
+// Running the search is where the applicant signs up (OTP) and their Customer +
+// Company get created — so the owner fields on this step (what the Company is
+// named/typed from) must be filled in first. Continue from this step then
+// converts the Lead to a Deal (flow.convertAtStep, see goNext()).
+function TmSearchBody({ flow, step, A, state, errors, setAnswer, bump, liveStateNames }) {
   const isCurrent = tmSearchIsCurrent(A, state);
+  const [saving, setSaving] = useState(false);
   function run() {
     const name = (A.tm_name || "").trim();
-    if (!name) return;
-    requireLead(state, bump, () => {
-      const results = runTrademarkSearchSim(name, A.tm_class);
-      state.tmSearch = { for: name.toLowerCase(), results, at: today() };
-      A.tm_searchDone = "Yes";
+    if (!name || saving) return;
+    const fieldErrors = validateFields(step, A, {});
+    Object.keys(errors).forEach((k) => delete errors[k]);
+    if (Object.keys(fieldErrors).length) {
+      Object.assign(errors, fieldErrors);
       bump();
+      return;
+    }
+    requireVerifiedCustomer(state, bump, () => {
+      setSaving(true);
+      syncCustomerCompany(state, A, bump, flow).finally(() => {
+        const results = runTrademarkSearchSim(name, A.tm_class);
+        state.tmSearch = { for: name.toLowerCase(), results, at: today() };
+        A.tm_searchDone = "Yes";
+        setSaving(false);
+        bump();
+      });
     });
   }
   return (
     <div>
-      <p className="text-sm text-gray-700 mb-3">We'll check the public register for identical or similar marks to <b>{A.tm_name || "your trademark"}</b> in {A.tm_class || "the selected class"}.</p>
-      <button type="button" onClick={run} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold">🔍 {isCurrent ? "Run search again" : "Run Public Trademark Search"}</button>
+      <FieldsBody step={step} A={A} errors={errors} setAnswer={setAnswer} state={state} bump={bump} liveStateNames={liveStateNames} />
+      <p className="text-sm text-gray-700 mt-5 mb-3">We'll check the public register for identical or similar marks to <b>{A.tm_name || "your trademark"}</b> in {A.tm_class || "the selected class"}.</p>
+      <button type="button" onClick={run} disabled={saving} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-60">🔍 {saving ? "Saving your details…" : isCurrent ? "Run search again" : "Run Public Trademark Search"}</button>
       {isCurrent && <div className="mt-3"><Note variant="info" body="Search completed. Continue to view the results." /></div>}
       <ErrorText msg={errors.__search} />
     </div>
