@@ -6,7 +6,7 @@ import "./newco-theme.css";
 // engine (and the FLOWS ported for the Existing Company journey) recolored to the
 // yellow/black Bizpole brand. Handles every card on the NewCompanyServiceMenu:
 // Business Registration ("newco"), GST Registration ("gst"), Trademark Registration
-// ("trademark") and the Other Registrations sub-menu ("msme" / "iec" / "other-generic").
+// ("trademark") and the Other Registrations sub-menu ("msme" / "iec" / "fssai").
 //
 // Business Registration's own step 1 ("What type of business do you want to register?")
 // already asks the Private Limited / LLP / OPC / Partnership / Proprietorship question,
