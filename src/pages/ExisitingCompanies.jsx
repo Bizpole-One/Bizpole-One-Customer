@@ -2,6 +2,7 @@ import { useState } from "react";
 import { getSecureItem, setSecureItem, removeSecureItem } from "../utils/secureStorage";
 import ExistingNeedsMenu from "../components/ExixistingCompany/ExistingNeedsMenu";
 import FlowRunner from "../components/ExixistingCompany/FlowRunner";
+import "../components/ExixistingCompany/existingco-theme.css";
 
 const SELECTION_KEY = "existingCompanySelection";
 
@@ -20,7 +21,7 @@ const ExisitingCompanies = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="exco-theme min-h-screen bg-gray-50">
       {selection ? (
         <FlowRunner key={selection.flow} flowId={selection.flow} initialSet={selection.set} onExit={handleExit} />
       ) : (
