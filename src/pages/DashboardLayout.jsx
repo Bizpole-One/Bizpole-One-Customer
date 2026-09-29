@@ -16,6 +16,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { flowRoute, inProgressApplications, clearStorageKeepingApplications } from "../utils/applicationPrefill";
 
 
 // Context to provide selected company and quotes
@@ -170,7 +171,7 @@ const DashboardLayout = () => {
 
   const [showConfirm, setShowConfirm] = useState(false);
   const handleLogout = () => {
-    localStorage.clear();
+    clearStorageKeepingApplications();
     navigate("/");
   };
   // Handle company selection
@@ -240,6 +241,33 @@ const DashboardLayout = () => {
     { name: "Bizpole One", path: "/dashboard/bizpoleone", icon: Layers },
     { name: "Bizpole Books", path: "/dashboard/books", icon: BookOpen },
   ];
+  // Bottom of the company switcher: pick up an application already in progress
+  // (its saved answers reopen as entered — see applicationPrefill).
+  const inProgress = showCompanyDropdown ? inProgressApplications() : [];
+  const openApplication = (path, state) => {
+    setShowCompanyDropdown(false);
+    setIsMobileMenuOpen(false);
+    navigate(path, { state });
+  };
+  const applicationActions = inProgress.length > 0 && (
+    <div className="border-t border-gray-200 py-1">
+      {inProgress.map((app) => {
+        const { path, state } = flowRoute(app.flowId);
+        return (
+          <button
+            key={app.flowId}
+            type="button"
+            className="w-full text-left px-5 py-2.5 hover:bg-yellow-100 text-sm transition"
+            onClick={() => openApplication(path, { ...state, companyId: selectedCompanyId })}
+          >
+            <span className="font-semibold">Continue:</span> {app.name}
+            <span className="block text-xs text-gray-500">{app.kind} · step {app.step}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
 const uniqueCompanies = Array.from(
   new Map(
     companies.map((company) => [company.BusinessName.trim(), company]),
@@ -292,6 +320,7 @@ const uniqueCompanies = Array.from(
                       {company.BusinessName}
                     </button>
                   ))}
+                  {applicationActions}
                 </div>
               )}
             </div>
@@ -402,6 +431,7 @@ const uniqueCompanies = Array.from(
                       {company.BusinessName}
                     </button>
                   ))}
+                  {applicationActions}
                 </div>
               )}
             </div>

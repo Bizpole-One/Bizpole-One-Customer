@@ -9,6 +9,7 @@ import { createSupportTicket } from "../../api/SupportTickets/SupportTicket";
 import { fetchFranchiseeGstInfo, calcGstAmount, splitGst } from "../../utils/gstCalc";
 import { loginWithPhone, signupWithPhone, verifyOtp } from "../../api/AuthApi";
 import { notifyTokenSet } from "../../utils/authSession";
+import { signedInContact, belongsToOtherCustomer } from "../../utils/applicationPrefill";
 import {
   FLOWS, ownerConfig, ownerBaseFields, newOwner, visibleFields, docItems, docGroups, isMinor,
   fieldError, today, rupee, newApplicationId, ADDON_PRICE, ADDON_SERVICE_ID, STATES,
@@ -78,8 +79,22 @@ function freshState(flowId, initialSet) {
 // lead has already been captured, otherwise opens the LeadCaptureModal first.
 function requireLead(state, bump, run) {
   if (state.leadCaptured) { run(); return; }
+  if (leadFromSignedInCustomer(state, bump, run)) return;
   state.leadGate = { run };
   bump();
+}
+
+// An already signed-in Customer (e.g. opening a flow from the dashboard) has
+// nothing to verify — raise the Lead from their profile and carry on, instead
+// of making them re-enter their details and an OTP in LeadCaptureModal.
+// Returns false (modal still needed) when their profile is missing a detail.
+function leadFromSignedInCustomer(state, bump, run) {
+  const me = signedInContact();
+  if (!me?.name || !me.mobile || !me.email) return false;
+  state.customerId = state.customerId || me.customerId;
+  state.otpVerified = true;
+  raiseLead(state, { ...me, ...(state.leadContact || {}) }).then(() => { bump(); run(); });
+  return true;
 }
 
 // Stricter than requireLead: the applicant must be a signed-in Customer (mobile
@@ -99,6 +114,7 @@ function requireVerifiedCustomer(state, bump, run) {
     } catch { /* not signed in */ }
   }
   if (state.otpVerified && state.leadCaptured) { run(); return; }
+  if (leadFromSignedInCustomer(state, bump, run)) return;
   state.leadGate = { run };
   bump();
 }
@@ -431,7 +447,10 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   const appRef = useRef(null);
   if (appRef.current === null) {
     const saved = getSecureItem(storageKey);
-    appRef.current = saved && saved.flowId === flowId ? saved : freshState(flowId, initialSet);
+    appRef.current = saved && saved.flowId === flowId && !belongsToOtherCustomer(saved) ? saved : freshState(flowId, initialSet);
+    // Progress now survives logout (clearStorageKeepingApplications) — stamp
+    // whose it is, so another Customer on this browser never resumes it.
+    if (!appRef.current.ownerCustomerId) appRef.current.ownerCustomerId = signedInContact()?.customerId || null;
   }
   const [, rerender] = useReducer((c) => c + 1, 0);
   const errorsRef = useRef({});
@@ -944,8 +963,11 @@ async function raiseLead(state, form) {
       employeeId: res?.assignedEmployeeId || null,
     };
   } catch (err) {
-    console.error("Lead capture failed (non-fatal):", err);
-    state.leadContact = { ...form, leadId: null, franchiseeId, employeeId: null };
+    // 409 isDuplicate: this mobile already has a Lead (always true for a
+    // returning, signed-in customer) — continue the application on that one.
+    const dup = err?.response?.status === 409 && err.response.data?.isDuplicate ? err.response.data : null;
+    if (!dup) console.error("Lead capture failed (non-fatal):", err);
+    state.leadContact = { ...form, leadId: dup?.existingLeadId || null, franchiseeId, employeeId: null };
   }
   state.leadCaptured = true;
 }
@@ -969,9 +991,9 @@ async function captureLeadDetails(state) {
 function LeadDetailsBody({ state, errors, bump }) {
   const [states, setStates] = useState([]);
   if (!state.leadForm) {
-    state.leadForm = state.leadContact
-      ? { name: state.leadContact.name || "", mobile: state.leadContact.mobile || "", email: state.leadContact.email || "", country: state.leadContact.country || "India", state: state.leadContact.state || "", language: state.leadContact.language || "" }
-      : { name: "", mobile: "", email: "", country: "India", state: "", language: "" };
+    // Prefill from the signed-in Customer's profile when there's no earlier entry.
+    const src = state.leadContact || signedInContact() || {};
+    state.leadForm = { name: src.name || "", mobile: src.mobile || "", email: src.email || "", country: src.country || "India", state: src.state || "", language: src.language || "" };
   }
   const form = state.leadForm;
 
@@ -1048,7 +1070,7 @@ function LeadCaptureModal({ state, bump }) {
   const [states, setStates] = useState([]);
   // Already entered on a "leadDetails" Step 1 (Lead raised, just not verified
   // yet) — prefill from it and go straight to the details form to confirm.
-  const lc = state.leadContact;
+  const lc = state.leadContact || signedInContact();
   const [form, setForm] = useState({
     name: lc?.name || "", mobile: lc?.mobile || "", email: lc?.email || "",
     country: lc?.country || "India", state: lc?.state || "", language: lc?.language || "",
@@ -2285,7 +2307,7 @@ function SuccessScreen({ state, onExit, onComplete, nextLabel, onRetryPayment })
               page in the other tab, not synchronously here — the applicant may
               still need to come back and finish it, so this application stays
               recoverable until they explicitly start a new one. */}
-          <button onClick={() => onComplete(s)} className="px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold">
+          <button onClick={() => onComplete({ ...s, companyId: state.companyId })} className="px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold">
             {nextLabel || "Continue →"}
           </button>
         </div>
