@@ -111,8 +111,10 @@ export function addressFields(prefix, label) {
     // India, so this is a single-option pick rather than free text — explicit
     // and visible, but not an invitation to enter an invalid country.
     pickField(p + "country", "Country", ["India"]),
-    pickField(p + "state", "State", STATES),
-    textField(p + "district", "District"),
+    // District options follow the chosen State (see FlowRunner's "district"
+    // field) — changing the State clears a District picked for the old one.
+    pickField(p + "state", "State", STATES, { clears: p + "district" }),
+    { k: p + "district", type: "district", label: "District", stateKey: p + "state", required: true },
     textField(p + "city", "City / Town"),
     textField(p + "pincode", "Pincode", { pattern: "pin", ph: "6 digits" }),
   ];
