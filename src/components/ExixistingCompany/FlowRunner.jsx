@@ -10,6 +10,8 @@ import { fetchFranchiseeGstInfo, calcGstAmount, splitGst } from "../../utils/gst
 import { loginWithPhone, signupWithPhone, verifyOtp } from "../../api/AuthApi";
 import { notifyTokenSet } from "../../utils/authSession";
 import { signedInContact, belongsToOtherCustomer } from "../../utils/applicationPrefill";
+import { districtsFor } from "../../utils/districts";
+import SigninModal from "../Modals/SigninModal";
 import {
   FLOWS, ownerConfig, ownerBaseFields, newOwner, visibleFields, docItems, docGroups, isMinor,
   fieldError, today, rupee, newApplicationId, ADDON_PRICE, ADDON_SERVICE_ID, STATES,
@@ -103,6 +105,10 @@ function leadFromSignedInCustomer(state, bump, run) {
 // "leadDetails" form have a Lead by now but no sign-in yet, so this still
 // opens LeadCaptureModal, which then only verifies (no second Lead).
 function requireVerifiedCustomer(state, bump, run) {
+  // otpVerified is saved with the application, but the session it proved can
+  // be gone since (logout keeps applications, or the token expired) — without
+  // a token the applicant isn't signed in any more, so verify again.
+  if (!localStorage.getItem("token")) state.otpVerified = false;
   if (!state.otpVerified) {
     try {
       const raw = getSecureItem("user");
@@ -437,6 +443,32 @@ const inputCls = (bad) =>
   `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 ${
     bad ? "border-red-400 bg-red-50" : "border-gray-200"
   }`;
+const isIndia = (country) => !country || String(country).trim().toLowerCase() === "india";
+// Indian mobile: a fixed "+91" in front, and only the 10 digits kept in the
+// value (what validation and the backend expect) — pasting "+91 98…" or
+// "098…" drops the prefix. Other countries get a plain number box.
+function MobileInput({ value, onChange, className, placeholder, india = true }) {
+  const clean = (v) => {
+    let d = String(v || "").replace(/\D/g, "");
+    if (india && d.length > 10) d = d.replace(/^(91|0)/, "");
+    return d.slice(0, 10);
+  };
+  const input = (
+    <input type="tel" inputMode="numeric" className={india ? `${className} rounded-l-none` : className}
+      value={value || ""} onChange={(e) => onChange(clean(e.target.value))} placeholder={placeholder} />
+  );
+  if (!india) return input;
+  return (
+    <div className="flex">
+      <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-200 bg-gray-50 text-sm text-gray-600">+91</span>
+      {input}
+    </div>
+  );
+}
+// The contact forms' State list comes from /states — if that request fails,
+// fall back to the static list rather than an empty dropdown.
+const withStaticStates = (rows) =>
+  rows?.length ? rows : STATES.filter((s) => s !== "Other").map((s) => ({ state_name: s }));
 
 export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onSkip, homeLabel, nextLabel }) {
   // Namespaced per flowId — this same FlowRunner backs every entry in FLOWS
@@ -445,9 +477,15 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   // whatever progress was saved for a different one.
   const storageKey = `${STORAGE_KEY}_${flowId}`;
   const appRef = useRef(null);
+  const resumedRef = useRef(false);
   if (appRef.current === null) {
     const saved = getSecureItem(storageKey);
-    appRef.current = saved && saved.flowId === flowId && !belongsToOtherCustomer(saved) ? saved : freshState(flowId, initialSet);
+    const resume = !!saved && saved.flowId === flowId && !belongsToOtherCustomer(saved);
+    appRef.current = resume ? saved : freshState(flowId, initialSet);
+    resumedRef.current = resume;
+    // An open sign-in modal gets saved too, minus its callback — never reopen
+    // a stale one on load (the effect below decides if one is needed).
+    if (resume) { appRef.current.leadGate = null; appRef.current.signIn = null; }
     // Progress now survives logout (clearStorageKeepingApplications) — stamp
     // whose it is, so another Customer on this browser never resumes it.
     if (!appRef.current.ownerCustomerId) appRef.current.ownerCustomerId = signedInContact()?.customerId || null;
@@ -480,6 +518,19 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
     persist();
     rerender();
   }
+  // Reopening a saved application whose applicant had signed in, but whose
+  // session has since ended (logout keeps applications; tokens expire after a
+  // day) — ask them to verify again straight away, rather than letting them
+  // carry on signed out until something that needs a session fails.
+  useEffect(() => {
+    const s = appRef.current;
+    if (!resumedRef.current || s.submitted || localStorage.getItem("token")) return;
+    if (!s.otpVerified && !s.customerId) return;
+    s.otpVerified = false;
+    s.signIn = { welcomeBack: true };
+    bump();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function setAnswer(k, v) {
     appRef.current.answers[k] = v;
     delete errorsRef.current[k];
@@ -594,14 +645,38 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
     state.stepIndex = Math.min(state.stepIndex + 1, steps.length - 1);
     bump();
   }
-  function goBack() {
-    if (stepIndex === 0) {
-      if (window.confirm("Leave this application? Your answers on this application will be discarded.")) {
-        removeSecureItem(storageKey);
-        onExit();
-      }
-      return;
+  // Discard this application from any step. Once a Deal exists it can't be
+  // cancelled from here any more — just leave the flow, keeping its answers
+  // to resume.
+  function cancelApplication() {
+    if (state.dealId) { onExit(); return; }
+    if (window.confirm("Leave this application? Your answers on this application will be discarded.")) {
+      removeSecureItem(storageKey);
+      onExit();
     }
+  }
+  // The dashboard is sign-in only — auto sign-in only happens for a brand-new
+  // Customer, so an applicant whose mobile already had an account would just
+  // bounce to the home page. Verify them first (OTP), then go.
+  function skipToDashboard() {
+    if (localStorage.getItem("token")) { requireVerifiedCustomer(state, bump, () => onSkip()); return; }
+    state.otpVerified = false;
+    state.signIn = { then: () => onSkip() };
+    bump();
+  }
+  // Standard site Sign In (SigninModal) for a returning applicant — their
+  // Customer account already exists, so it's a plain OTP login, prefilled.
+  function finishSignIn(tokenData) {
+    const next = state.signIn?.then;
+    const user = tokenData?.user;
+    if (user?.CustomerID) state.customerId = state.customerId || user.CustomerID;
+    state.otpVerified = true;
+    state.signIn = null;
+    bump();
+    next && next();
+  }
+  function goBack() {
+    if (stepIndex === 0) { cancelApplication(); return; }
     errorsRef.current = {};
     state.stepIndex -= 1;
     bump();
@@ -631,6 +706,13 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       {state.leadGate && <LeadCaptureModal state={state} bump={bump} />}
+      {state.signIn && !state.leadGate && (
+        <SigninModal
+          initialValue={state.leadContact?.mobile || ""}
+          onSuccess={finishSignIn}
+          onClose={() => { state.signIn = null; bump(); }}
+        />
+      )}
       <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4 flex-wrap">
         <button onClick={goBack} className="hover:text-blue-600 hover:underline">{homeLabel || "Existing Company"}</button>
         <span>›</span>
@@ -669,7 +751,9 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
                   </li>
                 ))}
               </ul>
-              <button onClick={goBack} className="mt-4 w-full text-xs text-gray-400 hover:text-red-600 py-1.5">✕ Cancel application</button>
+              {!state.dealId && (
+                <button onClick={cancelApplication} className="mt-4 w-full text-xs text-gray-400 hover:text-red-600 py-1.5">✕ Cancel application</button>
+              )}
             </div>
           </aside>
 
@@ -697,7 +781,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
                 <button onClick={goBack} className="px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50">← Back</button>
                 <div className="flex items-center gap-3">
                   {canSkipToDashboard && (
-                    <button onClick={() => onSkip()} className="px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-500 hover:bg-gray-50">
+                    <button onClick={skipToDashboard} className="px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-500 hover:bg-gray-50">
                       Skip for now — go to dashboard
                     </button>
                   )}
@@ -1016,10 +1100,11 @@ function LeadDetailsBody({ state, errors, bump }) {
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Mobile<span className="text-red-500 ml-0.5">*</span></label>
-        <input
+        <MobileInput
           className={inputCls(errors.lead_mobile)}
           value={form.mobile}
-          onChange={(e) => set("mobile", e.target.value.replace(/\D/g, "").slice(0, 10))}
+          onChange={(v) => set("mobile", v)}
+          india={isIndia(form.country)}
           placeholder="10-digit mobile number"
         />
         <ErrorText msg={errors.lead_mobile} />
@@ -1038,7 +1123,7 @@ function LeadDetailsBody({ state, errors, bump }) {
         <label className="block text-sm font-medium text-gray-700 mb-1">State<span className="text-red-500 ml-0.5">*</span></label>
         <select className={inputCls(errors.lead_state)} value={form.state} onChange={(e) => set("state", e.target.value)}>
           <option value="">Select State</option>
-          {states.map((s) => <option key={s.id || s.state_code || s.state_name} value={s.state_name}>{s.state_name}</option>)}
+          {withStaticStates(states).map((s) => <option key={s.id || s.state_code || s.state_name} value={s.state_name}>{s.state_name}</option>)}
         </select>
         <ErrorText msg={errors.lead_state} />
       </div>
@@ -1314,10 +1399,11 @@ function LeadCaptureModal({ state, bump }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Mobile<span className="text-red-500 ml-0.5">*</span></label>
-                <input
+                <MobileInput
                   className={inputCls()}
                   value={form.mobile}
-                  onChange={(e) => set("mobile", e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  onChange={(v) => set("mobile", v)}
+                  india={isIndia(form.country)}
                   placeholder="10-digit mobile number"
                 />
               </div>
@@ -1333,7 +1419,7 @@ function LeadCaptureModal({ state, bump }) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">State<span className="text-red-500 ml-0.5">*</span></label>
                 <select className={inputCls()} value={form.state} onChange={(e) => set("state", e.target.value)}>
                   <option value="">Select State</option>
-                  {states.map((s) => <option key={s.id || s.state_code || s.state_name} value={s.state_name}>{s.state_name}</option>)}
+                  {withStaticStates(states).map((s) => <option key={s.id || s.state_code || s.state_name} value={s.state_name}>{s.state_name}</option>)}
                 </select>
               </div>
               <div>
@@ -1433,10 +1519,44 @@ function Field({ f, A, errors, setAnswer, state, bump, liveStateNames }) {
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}<ReqMark f={f} A={A} /></label>
         {f.hint && <p className="text-xs text-gray-500 mb-1">{f.hint}</p>}
-        <select className={inputCls(errors[f.k])} value={A[f.k] || ""} onChange={(e) => setAnswer(f.k, e.target.value)}>
+        <select className={inputCls(errors[f.k])} value={A[f.k] || ""} onChange={(e) => {
+          if (f.clears && e.target.value !== A[f.k]) setAnswer(f.clears, "");
+          setAnswer(f.k, e.target.value);
+        }}>
           <option value="">Select…</option>
           {opts.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
+        <ErrorText msg={errors[f.k]} />
+      </div>
+    );
+  }
+  if (f.type === "district") {
+    // Options from the chosen State (same statesAndDistricts.json as
+    // AddCompanyModal); free text when the State isn't in that list ("Other").
+    const stateName = A[f.stateKey];
+    const districts = districtsFor(stateName);
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}<ReqMark f={f} A={A} /></label>
+        {districts.length ? (
+          <select className={inputCls(errors[f.k])} value={A[f.k] || ""} onChange={(e) => setAnswer(f.k, e.target.value)}>
+            <option value="">Select…</option>
+            {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        ) : (
+          <input className={inputCls(errors[f.k])} value={A[f.k] || ""} onChange={(e) => setAnswer(f.k, e.target.value)}
+            disabled={!stateName} placeholder={stateName ? "Enter district" : "Select a state first"} />
+        )}
+        <ErrorText msg={errors[f.k]} />
+      </div>
+    );
+  }
+  if (f.pattern === "mobile") {
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}<ReqMark f={f} A={A} /></label>
+        {f.hint && <p className="text-xs text-gray-500 mb-1">{f.hint}</p>}
+        <MobileInput className={inputCls(errors[f.k])} value={A[f.k]} onChange={(v) => setAnswer(f.k, v)} placeholder={f.ph || ""} />
         <ErrorText msg={errors[f.k]} />
       </div>
     );
@@ -1574,8 +1694,13 @@ function OwnersBody({ A, state, errors, bump }) {
                 return (
                   <div key={f.k} className={f.full ? "sm:col-span-2" : ""}>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}{!optional && <span className="text-red-500">*</span>}{optional && <span className="text-gray-400 font-normal"> (optional)</span>}</label>
-                    <input type={f.type} className={inputCls(errors["owner" + i + "_" + f.k])} value={o[f.k] || ""} placeholder={f.ph || ""}
-                      onChange={(e) => setOwnerField(i, f.k, e.target.value)} />
+                    {f.pattern === "mobile" ? (
+                      <MobileInput className={inputCls(errors["owner" + i + "_" + f.k])} value={o[f.k]} placeholder={f.ph || ""}
+                        onChange={(v) => setOwnerField(i, f.k, v)} />
+                    ) : (
+                      <input type={f.type} className={inputCls(errors["owner" + i + "_" + f.k])} value={o[f.k] || ""} placeholder={f.ph || ""}
+                        onChange={(e) => setOwnerField(i, f.k, e.target.value)} />
+                    )}
                     <ErrorText msg={errors["owner" + i + "_" + f.k]} />
                   </div>
                 );
@@ -1629,8 +1754,13 @@ function OwnersBody({ A, state, errors, bump }) {
                   {fields.map((f) => (
                     <div key={"nom_" + f.k} className={f.full ? "sm:col-span-2" : ""}>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Nominee {f.label}<span className="text-red-500">*</span></label>
-                      <input type={f.type} className={inputCls(errors["owner" + i + "_nominee_" + f.k])} value={(o.nominee || {})[f.k] || ""} placeholder={f.ph || ""}
-                        onChange={(e) => setOwnerNomineeField(i, f.k, e.target.value)} />
+                      {f.pattern === "mobile" ? (
+                        <MobileInput className={inputCls(errors["owner" + i + "_nominee_" + f.k])} value={(o.nominee || {})[f.k]} placeholder={f.ph || ""}
+                          onChange={(v) => setOwnerNomineeField(i, f.k, v)} />
+                      ) : (
+                        <input type={f.type} className={inputCls(errors["owner" + i + "_nominee_" + f.k])} value={(o.nominee || {})[f.k] || ""} placeholder={f.ph || ""}
+                          onChange={(e) => setOwnerNomineeField(i, f.k, e.target.value)} />
+                      )}
                       <ErrorText msg={errors["owner" + i + "_nominee_" + f.k]} />
                     </div>
                   ))}

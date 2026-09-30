@@ -8,13 +8,16 @@ import { notifyTokenSet } from "../../utils/authSession";
 
 // Add a mode state for switching between sign-in and sign-up
 
-const SigninModal = ({ isOpen = true, onClose = () => { } }) => {
+// initialValue: prefill the phone/email box. onSuccess(tokenData): run after
+// sign-in instead of the default redirect to the dashboard (e.g. an
+// application flow that should stay on its current step).
+const SigninModal = ({ isOpen = true, onClose = () => { }, initialValue = "", onSuccess }) => {
   const navigate = useNavigate();
   const [mode, setMode] = useState("signin"); // 'signin' or 'signup'
   const [step, setStep] = useState(1);
   const [isVerifying, setIsVerifying] = useState(false);
   const [signedMessage, setSignedMessage] = useState("");
-  const [inputValue, setInputValue] = useState("");
+  const [inputValue, setInputValue] = useState(initialValue);
   const [isHovered, setIsHovered] = useState(false);
   const [timer, setTimer] = useState(30);
   const [otpValues, setOtpValues] = useState(["", "", "", ""]);
@@ -113,6 +116,10 @@ const SigninModal = ({ isOpen = true, onClose = () => { } }) => {
           setStep(3);
           console.log("Token Data:", tokenData);
           setTimeout(() => {
+            if (onSuccess) {
+              onSuccess(tokenData);
+              return;
+            }
             onClose();
             navigate("/dashboard/bizpoleone");
           }, 1200); // short delay for user feedback
