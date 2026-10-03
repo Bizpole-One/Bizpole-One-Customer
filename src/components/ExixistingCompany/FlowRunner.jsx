@@ -5,7 +5,9 @@ import { lookupGstin } from "../../api/GstinLookup";
 import { assignCustomer } from "../../api/CustomerApi";
 import { createLead, createCustomerCompany, convertLeadToDeal, createQuoteForApplication, uploadApplicationDocument, removeApplicationDocument } from "../../api/LeadApi";
 import { getAllStates } from "../../api/States";
-import { createSupportTicket } from "../../api/SupportTickets/SupportTicket";
+import { getAllServiceTypes, getPackagesByServiceType } from "../../api/ServiceType";
+import { createSupportTicket, getCompanyIdFromStorage } from "../../api/SupportTickets/SupportTicket";
+import { insertDeal, getCompanyDetails } from "../../api/DealsApi";
 import { fetchFranchiseeGstInfo, calcGstAmount, splitGst } from "../../utils/gstCalc";
 import { loginWithPhone, signupWithPhone, verifyOtp } from "../../api/AuthApi";
 import { notifyTokenSet } from "../../utils/authSession";
@@ -18,6 +20,7 @@ import {
   recommendBusinessType, suggestedBusinessNames, runNameCheckSim,
   generateBusinessObjective, suggestedNicCodes, tmClassMatches,
   selectedNiceClass, runTrademarkSearchSim, tmRiskLevel, NICE_CLASSES,
+  TM_MARK_TYPES, TM_LANGUAGES, newTmMark, tmMarks, tmMarkLabel, tmGovtFee,
 } from "./existingCompanyData";
 
 const STORAGE_KEY = "existingCompanyFlowState";
@@ -81,20 +84,36 @@ function freshState(flowId, initialSet) {
 // lead has already been captured, otherwise opens the LeadCaptureModal first.
 function requireLead(state, bump, run) {
   if (state.leadCaptured) { run(); return; }
-  if (leadFromSignedInCustomer(state, bump, run)) return;
+  // Signed-in Customer: they're already known, so show the result on this very
+  // click — the Lead is raised in the background rather than making the first
+  // click look like it did nothing while createLead is in flight.
+  if (leadFromSignedInCustomer(state, bump, run, { immediate: true })) return;
   state.leadGate = { run };
   bump();
 }
+
+// States with a background raiseLead() in flight — kept out of the persisted
+// state so a reload mid-request can't leave the Lead permanently "in progress".
+const leadsInFlight = new WeakSet();
 
 // An already signed-in Customer (e.g. opening a flow from the dashboard) has
 // nothing to verify — raise the Lead from their profile and carry on, instead
 // of making them re-enter their details and an OTP in LeadCaptureModal.
 // Returns false (modal still needed) when their profile is missing a detail.
-function leadFromSignedInCustomer(state, bump, run) {
+// `immediate` runs `run` straight away instead of after the Lead is raised.
+function leadFromSignedInCustomer(state, bump, run, { immediate = false } = {}) {
   const me = signedInContact();
   if (!me?.name || !me.mobile || !me.email) return false;
   state.customerId = state.customerId || me.customerId;
   state.otpVerified = true;
+  if (immediate) {
+    if (!leadsInFlight.has(state)) {
+      leadsInFlight.add(state);
+      raiseLead(state, { ...me, ...(state.leadContact || {}) }).finally(() => { leadsInFlight.delete(state); bump(); });
+    }
+    run();
+    return true;
+  }
   raiseLead(state, { ...me, ...(state.leadContact || {}) }).then(() => { bump(); run(); });
   return true;
 }
@@ -204,6 +223,7 @@ function syncCustomerCompany(state, A, bump, flow) {
   if (state.companyId || !state.leadContact) return Promise.resolve(); // already synced, or no contact captured yet
   const companyName = resolveCompanyName(flow, A);
   if (!companyName) return Promise.resolve();
+  if (state.leadContact.direct && matchExistingCompany(state, companyName)) { bump(); return Promise.resolve(); }
   // Directors/Shareholders entered on this same step — each maps to a
   // company_directors row (see createCustomerAndCompanyOnly on the backend).
   const directors = state.owners.map((o) => ({
@@ -275,66 +295,94 @@ function contentSteps(flowId, A) {
 function allSteps(flowId, A) {
   return contentSteps(flowId, A).concat([
     { id: "__review", title: "Review", type: "review" },
+    { id: "__packages", title: "Packages", type: "packages" },
     { id: "__payment", title: "Payment", type: "payment" },
     { id: "__success", title: "Submitted", type: "success" },
   ]);
 }
 
+// Latest allowed date of birth: 31 Dec of last year (yyyy-mm-dd, compared as a string).
+const DOB_MAX = `${new Date().getFullYear() - 1}-12-31`;
+const DOB_ERROR = `Date of birth must be before ${new Date().getFullYear()}.`;
 function validateStep(step, A, state) {
   const errors = {};
   if (step.type === "owners") {
     const cfg = ownerConfig(A);
     const n = state.owners.length;
     if (!n) errors.__owners = `Add at least ${cfg.minCount === 1 ? "1 person" : cfg.minCount + " people"}`;
-    else if (n < cfg.minCount) errors.__owners = `${cfg.label} needs at least ${cfg.minCount} ${cfg.minCount === 1 ? "person" : "people"}. Currently: ${n}.`;
+    // Fewer than the minimum is fine for now — the rest can be added later
+    // (OwnersBody shows a reminder instead of blocking Continue).
     else if (cfg.maxCount && n > cfg.maxCount) errors.__owners = `${cfg.label} allows at most ${cfg.maxCount}. Currently: ${n}.`;
     const fields = ownerBaseFields(cfg);
     state.owners.forEach((o, i) => {
       const minor = isMinor(o.dob);
+      // Only the first person must be complete now — the others can be filled
+      // in later; whatever is entered for them is still format-checked.
+      const req = i === 0;
       fields.forEach((f) => {
         // A minor often has no PAN/email/mobile of their own yet — their nominee/
         // guardian's details (validated separately below) cover that instead.
         const relaxed = minor && MINOR_OPTIONAL_FIELDS.includes(f.k);
-        const e = fieldError({ required: !relaxed, pattern: f.pattern }, o[f.k]);
+        const e = fieldError({ required: req && !relaxed, pattern: f.pattern }, o[f.k]);
         if (e) errors["owner" + i + "_" + f.k] = e;
       });
-      const roleErr = fieldError({ required: true }, o.role);
+      const roleErr = fieldError({ required: req }, o.role);
       if (roleErr) errors["owner" + i + "_role"] = roleErr;
       // A minor can't legally hold a DIN/DPIN, so don't ask.
       if (cfg.hasDIN && !minor) {
-        const dk = fieldError({ required: true }, o.dinKnown);
+        const dk = fieldError({ required: req }, o.dinKnown);
         if (dk) errors["owner" + i + "_dinKnown"] = dk;
         if (o.dinKnown === "Yes") {
-          const de = fieldError({ required: true }, o.din);
+          const de = fieldError({ required: req }, o.din);
           if (de) errors["owner" + i + "_din"] = de;
         }
       }
       if (cfg.shareholding) {
-        const se = fieldError({ required: true }, o.shareholding);
+        const se = fieldError({ required: req }, o.shareholding);
         if (se) errors["owner" + i + "_shareholding"] = se;
       }
       if (cfg.capital) {
-        const ce = fieldError({ required: true }, o.capital);
+        const ce = fieldError({ required: req }, o.capital);
         if (ce) errors["owner" + i + "_capital"] = ce;
       }
       if (minor) {
         fields.forEach((f) => {
-          const e = fieldError({ required: true, pattern: f.pattern }, (o.nominee || {})[f.k]);
+          const e = fieldError({ required: req, pattern: f.pattern }, (o.nominee || {})[f.k]);
           if (e) errors["owner" + i + "_nominee_" + f.k] = e;
         });
       }
     });
+    // Date of birth can't fall in the current year (or later), for the owner
+    // and their nominee alike.
+    state.owners.forEach((o, i) => {
+      if (o.dob && o.dob > DOB_MAX) errors["owner" + i + "_dob"] = DOB_ERROR;
+      const nd = (o.nominee || {}).dob;
+      if (isMinor(o.dob) && nd && nd > DOB_MAX) errors["owner" + i + "_nominee_dob"] = DOB_ERROR;
+    });
+    // Each director/partner needs their own mobile number.
+    const seenMobile = {};
+    state.owners.forEach((o, i) => {
+      const m = String(o.mobile || "").replace(/\D/g, "").slice(-10);
+      if (m.length !== 10) return;
+      if (seenMobile[m] != null) {
+        errors["owner" + i + "_mobile"] = `This mobile number is already used for ${state.owners[seenMobile[m]].name || cfg.label.split(" / ")[0] + " " + (seenMobile[m] + 1)}. Each person needs a unique mobile number.`;
+      } else seenMobile[m] = i;
+    });
     if (cfg.shareholding && n) {
       const total = state.owners.reduce((sum, o) => sum + (Number(o.shareholding) || 0), 0);
-      if (total !== 100) errors.__shareholding = `Shareholding must total 100%. Current total: ${total}%.`;
+      // Exactly 100% once everyone's share is entered; until then (details
+      // still to be added later) just don't let it exceed 100%.
+      const allEntered = n >= cfg.minCount && state.owners.every((o) => String(o.shareholding || "").trim() !== "");
+      if (allEntered ? total !== 100 : total > 100) errors.__shareholding = `Shareholding must total 100%. Current total: ${total}%.`;
     }
   } else if (step.type === "docs") {
     const items = docItems(step, A, state);
     const any = items.some((it) => state.documents[it]);
     if (!any) errors.__docs = "Upload at least one document to continue";
-    const logoItem = "Logo Artwork (PNG / JPG)";
-    if (items.includes(logoItem) && !state.documents[logoItem]) {
-      errors.__docs = 'Logo artwork is required since you selected "Logo" to protect — upload it to continue';
+    // Every logo application needs its own artwork (see tmLogoDocLabel).
+    const missingLogo = items.find((it) => it.startsWith("Logo Artwork") && !state.documents[it]);
+    if (missingLogo) {
+      errors.__docs = `Logo artwork is required for each logo you're registering — upload "${missingLogo}" to continue`;
     }
     const msmeItem = "MSME / Startup Certificate";
     if (items.includes(msmeItem) && !state.documents[msmeItem]) {
@@ -353,6 +401,27 @@ function validateStep(step, A, state) {
   } else if (step.type === "objective") {
     if (A.br_objectiveAccepted !== "Yes") errors.br_objective = "Please review and accept the business objective to continue";
     if (!A.br_nicCode) errors.br_nicCode = "Select a NIC code to continue";
+  } else if (step.type === "tmMarks") {
+    if (!Array.isArray(A.tm_marks) || !A.tm_marks.length) errors.__marks = "Add at least one mark to register";
+    const seen = {};
+    (A.tm_marks || []).forEach((m, i) => {
+      const req = (k, ok = true) => { if (ok && fieldError({ required: true }, m[k])) errors[`mark${i}_${k}`] = "This field is required"; };
+      req("type");
+      // A logo may have no words in it; word marks and taglines are the words.
+      req("text", m.type !== "Logo");
+      req("language");
+      req("inUse");
+      req("useSince", m.inUse === "Yes");
+      req("applied");
+      req("appNo", m.applied === "Yes");
+      if (m.useSince && m.useSince > new Date().toISOString().slice(0, 10)) errors[`mark${i}_useSince`] = "Date can't be in the future";
+      // Same words = one word mark: brand/company/product name all share it.
+      const key = m.type !== "Logo" && (m.text || "").trim().toLowerCase();
+      if (key) {
+        if (seen[key] != null) errors[`mark${i}_text`] = `Same as application ${seen[key] + 1} — the same words are covered by one application`;
+        else seen[key] = i;
+      }
+    });
   } else if (step.type === "tmSearch") {
     // The owner fields on this step (what the Company is created from) are
     // checked too — see TmSearchBody.
@@ -544,6 +613,26 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   const steps = useMemo(() => allSteps(flowId, A), [flowId, JSON.stringify(A), state.owners.length, JSON.stringify(state.documents)]);
   const stepIndex = Math.min(state.stepIndex, steps.length - 1);
   const step = steps[stepIndex];
+  // Furthest step reached so far — the sidebar can jump forward up to it.
+  if (!(state.maxStepIndex >= stepIndex)) state.maxStepIndex = stepIndex;
+  // ...or further, to any step whose earlier steps are all already filled in
+  // (validateStep passes). This stops at a step whose Continue does real work
+  // (Lead / Customer / Company / Deal creation) unless it was already passed, so
+  // that work is never skipped, and never runs into Payment unreached.
+  let reachedIndex = state.maxStepIndex;
+  for (let j = 0; j < steps.length - 2; j++) {
+    const s = steps[j];
+    if (j >= state.maxStepIndex) {
+      const doesWork = s.type === "leadDetails" || s.type === "owners" ||
+        [flow?.convertAtStep, flow?.customerAtStep, flow?.dealAtStep].includes(s.id);
+      if (doesWork || steps[j + 1].type === "payment") break;
+    }
+    const errors = validateStep(s, A, state);
+    if (s.type === "review" && !state.confirmed) break;
+    if (Object.keys(errors).length) break;
+    reachedIndex = Math.max(reachedIndex, j + 1);
+  }
+  reachedIndex = Math.min(reachedIndex, steps.length - 2);
   const total = steps.length - 1; // success not counted
   const shown = Math.min(stepIndex + 1, total);
   const pct = total > 1 ? Math.round((Math.min(stepIndex, total - 1) / (total - 1)) * 100) : 0;
@@ -681,11 +770,29 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
     state.stepIndex -= 1;
     bump();
   }
+  // Sidebar navigation: back to any earlier step, or forward to any step the
+  // applicant already reached (state.maxStepIndex) — but only if every step in
+  // between still passes validateStep(), so an edit made after going back can't
+  // be skipped past. Those steps' Continue side effects already ran (and are
+  // guarded against duplicates), so nothing else needs re-running.
   function jumpTo(i) {
-    if (i < stepIndex) {
-      state.stepIndex = i;
-      bump();
+    if (i === stepIndex) return;
+    if (i > stepIndex) {
+      if (i > reachedIndex) return;
+      for (let j = stepIndex; j < i; j++) {
+        const errors = validateStep(steps[j], A, state);
+        if (steps[j].type === "review" && !state.confirmed) errors.__confirm = "Please confirm before proceeding";
+        if (Object.keys(errors).length) {
+          state.stepIndex = j;
+          errorsRef.current = errors;
+          bump();
+          return;
+        }
+      }
     }
+    errorsRef.current = {};
+    state.stepIndex = i;
+    bump();
   }
   // The Submitted screen is shown as soon as the (mocked) payment "completes",
   // regardless of whether the real Lead → Deal → Quote conversion behind it
@@ -738,18 +845,18 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
                 </div>
               </div>
               <ul className="mt-4 space-y-0.5 hidden lg:block">
-                {steps.slice(0, -1).map((s, i) => (
-                  <li key={s.id} className={`flex items-center gap-2.5 py-1.5 text-sm ${i === stepIndex ? "text-blue-700 font-semibold" : i < stepIndex ? "text-gray-800" : "text-gray-400"}`}>
+                {steps.slice(0, -1).map((s, i) => { const canJump = i !== stepIndex && i <= reachedIndex; const done = canJump && i < reachedIndex; return (
+                  <li key={s.id} className={`flex items-center gap-2.5 py-1.5 text-sm ${i === stepIndex ? "text-blue-700 font-semibold" : canJump ? "text-gray-800" : "text-gray-400"}`}>
                     <span className={`flex-none w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${
-                      i < stepIndex ? "bg-green-500 border-green-500 text-white" : i === stepIndex ? "border-blue-500 text-blue-600" : "border-gray-200"
+                      done ? "bg-green-500 border-green-500 text-white" : i === stepIndex ? "border-blue-500 text-blue-600" : "border-gray-200"
                     }`}>
-                      {i < stepIndex ? "✓" : i + 1}
+                      {done ? "✓" : i + 1}
                     </span>
-                    {i < stepIndex ? (
+                    {canJump ? (
                       <button onClick={() => jumpTo(i)} className="hover:underline text-left">{s.title}</button>
                     ) : <span>{s.title}</span>}
                   </li>
-                ))}
+                ); })}
               </ul>
               {!state.dealId && (
                 <button onClick={cancelApplication} className="mt-4 w-full text-xs text-gray-400 hover:text-red-600 py-1.5">✕ Cancel application</button>
@@ -765,6 +872,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
 
             {step.type === "leadDetails" && <LeadDetailsBody state={state} errors={errorsRef.current} bump={bump} />}
             {step.type === "review" && <ReviewBody flowId={flowId} A={A} state={state} errors={errorsRef.current} onConfirm={(v) => { state.confirmed = v; bump(); }} onJump={jumpTo} />}
+            {step.type === "packages" && <PackagesBody A={A} state={state} bump={bump} onPay={goNext} onCallback={() => doCallback(flow, state, bump)} onBack={goBack} />}
             {step.type === "payment" && <PaymentBody flow={flow} A={A} state={state} bump={bump} onPay={() => doPay(flow, state, bump)} onCallback={() => doCallback(flow, state, bump)} onBack={goBack} />}
             {step.type === "owners" && <OwnersBody A={A} state={state} errors={errorsRef.current} bump={bump} />}
             {step.type === "docs" && <DocsBody step={step} A={A} state={state} errors={errorsRef.current} bump={bump} />}
@@ -774,9 +882,10 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
             {step.type === "tmClassConfirm" && <TmClassConfirmBody A={A} onChangeClass={() => { state.stepIndex = steps.findIndex((s) => s.id === "recommend"); bump(); }} />}
             {step.type === "tmSearch" && <TmSearchBody flow={flow} step={step} A={A} state={state} errors={errorsRef.current} setAnswer={setAnswer} bump={bump} liveStateNames={liveStateNames} />}
             {step.type === "tmResults" && <TmResultsBody A={A} state={state} />}
+            {step.type === "tmMarks" && <TmMarksBody flow={flow} A={A} state={state} errors={errorsRef.current} setAnswer={setAnswer} bump={bump} />}
             {!step.type && <FieldsBody step={step} A={A} errors={errorsRef.current} setAnswer={setAnswer} state={state} bump={bump} liveStateNames={liveStateNames} />}
 
-            {step.type !== "payment" && (
+            {step.type !== "payment" && step.type !== "packages" && (
               <div className="flex items-center justify-between gap-3 mt-7 pt-5 border-t border-gray-100">
                 <button onClick={goBack} className="px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50">← Back</button>
                 <div className="flex items-center gap-3">
@@ -843,6 +952,7 @@ async function createDealForApplication(flow, state, A, bump) {
   if (!companyName) return;
   await ensureGstInfo(state).catch(() => {});
   const ServiceDetails = serviceDetailsFor(flow, A, state);
+  if (state.leadContact.direct) return createDirectDeal(flow, state, A, bump, companyName, ServiceDetails);
   try {
     const dealRes = await convertLeadToDeal({
       leadId: state.leadContact.leadId,
@@ -875,6 +985,44 @@ async function createDealForApplication(flow, state, A, bump) {
     bump();
   } catch (err) {
     console.error("Convert-to-deal failed (non-fatal):", err);
+  }
+}
+
+// Existing client (see captureExistingCustomer): no Lead to convert — create
+// the Deal directly against their Customer + Company, the same /insert the
+// portal's call-back flow uses for existing clients.
+async function createDirectDeal(flow, state, A, bump, companyName, ServiceDetails) {
+  await syncCustomerCompany(state, A, bump, flow);
+  if (!state.companyId) return; // Company couldn't be matched/created; Payment retries
+  const lc = state.leadContact;
+  try {
+    const dealRes = await insertDeal({
+      name: lc.name,
+      state: resolveAddress(flow, A, lc).state || lc.companyState,
+      mobile: lc.mobile,
+      email: lc.email,
+      franchiseId: lc.franchiseeId,
+      employeeId: lc.employeeId,
+      sourceOfSale: "Website",
+      dealType: "Individual",
+      services: ServiceDetails.map((s) => ({
+        serviceId: s.serviceId,
+        serviceName: s.serviceName,
+        professionalFee: s.professionalFee,
+        vendorFee: 0,
+        contractorFee: 0,
+        govtFee: s.governmentFee,
+        gstPct: Number(s.gstAmount) > 0 ? 18 : 0,
+        total: s.total,
+      })),
+      CompanyID: state.companyId,
+      CustomerID: state.customerId,
+    });
+    state.dealId = dealRes?.insertId || null;
+    syncCachedUserCompany(state.companyId, companyName);
+    bump();
+  } catch (err) {
+    console.error("Direct deal failed (non-fatal):", err);
   }
 }
 
@@ -987,7 +1135,7 @@ async function doCallback(flow, state, bump) {
       await createSupportTicket({
         category: "callback",
         subject: `Call back request — ${state.serviceType}`,
-        description: `Requested from the ${state.serviceType} application's Payment step (quote total ${rupee(f.total)}).`,
+        description: `Requested from the ${state.serviceType} application (quote total ${rupee(f.total)})${state.answers.selectedPackage ? `. Interested package: ${state.answers.selectedPackage.name} (${rupee(state.answers.selectedPackage.price)})` : ""}.`,
         priority: "medium",
         quoteId: state.quoteId,
         ...(state.companyId ? { companyId: state.companyId } : {}),
@@ -1022,6 +1170,9 @@ const LEAD_LANGUAGES = [
 // franchisee matches the state/language, and that must not stop the Lead
 // itself — createLead routes an owner on its own when franchiseeId is absent.
 async function raiseLead(state, form) {
+  // An existing client needs no Lead — their Deal is created directly (see
+  // createDealForApplication), same as the portal's call-back flow does.
+  if (await captureExistingCustomer(state, form)) return;
   let franchiseeId = null;
   try {
     const assignment = await assignCustomer({ language: form.language, state: form.state, district: form.state });
@@ -1056,11 +1207,63 @@ async function raiseLead(state, form) {
   state.leadCaptured = true;
 }
 
+// The signed-in Customer's cached `user` payload — but only for an existing
+// client, i.e. one who already has a Company with us. A brand-new sign-up
+// (no Companies yet) still goes through the Lead → Deal path.
+function existingCustomerAccount() {
+  if (!localStorage.getItem("token")) return null;
+  try {
+    const raw = getSecureItem("user");
+    const user = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return user?.CustomerID && user.Companies?.length ? user : null;
+  } catch {
+    return null;
+  }
+}
+
+// Existing client: skip createLead and take the franchisee/employee their
+// account is already assigned to (from their selected Company — same lookup
+// as the portal's call-back Deal, SupportTickets.jsx submitDeal). /insert needs
+// both, so without them this returns false and the Lead path runs instead.
+async function captureExistingCustomer(state, form) {
+  const user = existingCustomerAccount();
+  if (!user) return false;
+  const selectedId = getCompanyIdFromStorage();
+  const company = user.Companies.find((c) => String(c.CompanyID) === String(selectedId)) || user.Companies[0];
+  let franchiseeId = null;
+  let employeeId = null;
+  let companyState = company?.State || "";
+  try {
+    const details = (await getCompanyDetails(company.CompanyID))?.data || {};
+    franchiseeId = details.FranchiseID || null;
+    employeeId = details.Agents?.[0]?.EmployeeID || null;
+    companyState = companyState || details.State || "";
+  } catch (err) {
+    console.error("Existing customer's company lookup failed, raising a Lead instead:", err);
+  }
+  if (!franchiseeId || !employeeId) return false;
+  state.customerId = user.CustomerID;
+  state.leadContact = { ...form, leadId: null, franchiseeId, employeeId, direct: true, companyState };
+  state.leadCaptured = true;
+  return true;
+}
+
+// Existing client's Company for this application: one they already have with
+// the same name is reused as-is; anything else (e.g. registering another
+// company) is created under their existing Customer, with no Lead.
+function matchExistingCompany(state, companyName) {
+  const user = existingCustomerAccount();
+  const name = companyName.trim().toLowerCase();
+  const match = (user?.Companies || []).find((c) => String(c.BusinessName || c.CompanyName || "").trim().toLowerCase() === name);
+  if (match) state.companyId = match.CompanyID;
+  return !!match;
+}
+
 async function captureLeadDetails(state) {
   const form = state.leadForm;
   // Already raised on an earlier pass — just keep the contact details current.
   // A pass whose createLead failed (leadId null) retries instead.
-  if (state.leadCaptured && state.leadContact?.leadId) {
+  if (state.leadCaptured && (state.leadContact?.leadId || state.leadContact?.direct)) {
     state.leadContact = { ...state.leadContact, ...form };
     return;
   }
@@ -1267,7 +1470,7 @@ function LeadCaptureModal({ state, bump }) {
     state.otpVerified = true;
     // Lead already raised by the no-OTP Details step — keep it, just refresh
     // the contact details in case they were corrected here.
-    if (state.leadCaptured && state.leadContact?.leadId) {
+    if (state.leadCaptured && (state.leadContact?.leadId || state.leadContact?.direct)) {
       state.leadContact = { ...state.leadContact, ...form };
       setPhase("done");
       return;
@@ -1659,8 +1862,9 @@ function OwnersBody({ A, state, errors, bump }) {
   const primaryLabel = cfg.label.split(" / ")[0];
   const shareTotal = state.owners.reduce((sum, o) => sum + (Number(o.shareholding) || 0), 0);
 
-  function addOwner() { if (!capReached) { state.owners.push(newOwner()); bump(); } }
-  function removeOwner(i) { state.owners.splice(i, 1); bump(); }
+  // The count error from the last Continue is stale once a card is added/removed.
+  function addOwner() { if (!capReached) { state.owners.push(newOwner()); delete errors.__owners; bump(); } }
+  function removeOwner(i) { state.owners.splice(i, 1); delete errors.__owners; bump(); }
   function setOwnerField(i, k, v) { state.owners[i][k] = v; bump(); }
   function setOwnerNomineeField(i, k, v) {
     if (!state.owners[i].nominee) state.owners[i].nominee = {};
@@ -1674,11 +1878,16 @@ function OwnersBody({ A, state, errors, bump }) {
         <div className="font-semibold text-sm text-gray-800">{cfg.label}</div>
         <p className="text-xs text-gray-500 mt-1">{cfg.hint}</p>
         <ErrorText msg={errors.__owners} />
+        {n > 0 && n < cfg.minCount && (
+          <p className="text-xs text-amber-700 mt-1">{cfg.label} needs at least {cfg.minCount} — you can continue now and add the remaining {cfg.minCount - n} later.</p>
+        )}
       </div>
 
       <div className="space-y-4">
         {state.owners.map((o, i) => {
           const minor = isMinor(o.dob);
+          // Only the first person is required now; the rest can be filled in later.
+          const star = i === 0 ? <span className="text-red-500">*</span> : null;
           return (
           <div key={i} className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
             <div className="flex items-center justify-between mb-3">
@@ -1688,17 +1897,18 @@ function OwnersBody({ A, state, errors, bump }) {
               </b>
               {cfg.maxCount !== 1 && n > 1 && <button onClick={() => removeOwner(i)} className="text-xs text-red-500 hover:underline">Remove</button>}
             </div>
+            {i > 0 && <p className="text-xs text-gray-500 -mt-1 mb-3">You can add these details now or later — only the first {primaryLabel.toLowerCase()} must be complete to continue.</p>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {fields.map((f) => {
                 const optional = minor && MINOR_OPTIONAL_FIELDS.includes(f.k);
                 return (
                   <div key={f.k} className={f.full ? "sm:col-span-2" : ""}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}{!optional && <span className="text-red-500">*</span>}{optional && <span className="text-gray-400 font-normal"> (optional)</span>}</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}{!optional && star}{optional && <span className="text-gray-400 font-normal"> (optional)</span>}</label>
                     {f.pattern === "mobile" ? (
                       <MobileInput className={inputCls(errors["owner" + i + "_" + f.k])} value={o[f.k]} placeholder={f.ph || ""}
                         onChange={(v) => setOwnerField(i, f.k, v)} />
                     ) : (
-                      <input type={f.type} className={inputCls(errors["owner" + i + "_" + f.k])} value={o[f.k] || ""} placeholder={f.ph || ""}
+                      <input type={f.type} max={f.type === "date" ? DOB_MAX : undefined} className={inputCls(errors["owner" + i + "_" + f.k])} value={o[f.k] || ""} placeholder={f.ph || ""}
                         onChange={(e) => setOwnerField(i, f.k, e.target.value)} />
                     )}
                     <ErrorText msg={errors["owner" + i + "_" + f.k]} />
@@ -1706,7 +1916,7 @@ function OwnersBody({ A, state, errors, bump }) {
                 );
               })}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Role<span className="text-red-500">*</span></label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Role{star}</label>
                 <select className={inputCls(errors["owner" + i + "_role"])} value={o.role || ""} onChange={(e) => setOwnerField(i, "role", e.target.value)}>
                   <option value="">Select…</option>
                   {rolesFor(cfg, minor).map((r) => <option key={r} value={r}>{r}</option>)}
@@ -1716,7 +1926,7 @@ function OwnersBody({ A, state, errors, bump }) {
               </div>
               {cfg.hasDIN && !minor && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Do you already have a {cfg.dinLabel}?<span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Do you already have a {cfg.dinLabel}?{star}</label>
                   <select className={inputCls(errors["owner" + i + "_dinKnown"])} value={o.dinKnown || ""} onChange={(e) => setOwnerField(i, "dinKnown", e.target.value)}>
                     <option value="">Select…</option>
                     {["Yes", "No", "Not Sure"].map((x) => <option key={x} value={x}>{x}</option>)}
@@ -1726,21 +1936,21 @@ function OwnersBody({ A, state, errors, bump }) {
               )}
               {cfg.hasDIN && !minor && o.dinKnown === "Yes" && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{cfg.dinLabel}<span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{cfg.dinLabel}{star}</label>
                   <input className={inputCls(errors["owner" + i + "_din"])} value={o.din || ""} onChange={(e) => setOwnerField(i, "din", e.target.value)} placeholder="e.g. 08123456" />
                   <ErrorText msg={errors["owner" + i + "_din"]} />
                 </div>
               )}
               {cfg.shareholding && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Shareholding %<span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Shareholding %{star}</label>
                   <input type="number" min="0" max="100" className={inputCls(errors["owner" + i + "_shareholding"])} value={o.shareholding || ""} onChange={(e) => setOwnerField(i, "shareholding", e.target.value)} placeholder="e.g. 50" />
                   <ErrorText msg={errors["owner" + i + "_shareholding"]} />
                 </div>
               )}
               {cfg.capital && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Capital Contribution (₹)<span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Capital Contribution (₹){star}</label>
                   <input type="number" min="0" className={inputCls(errors["owner" + i + "_capital"])} value={o.capital || ""} onChange={(e) => setOwnerField(i, "capital", e.target.value)} placeholder="e.g. 50000" />
                   <ErrorText msg={errors["owner" + i + "_capital"]} />
                 </div>
@@ -1753,12 +1963,12 @@ function OwnersBody({ A, state, errors, bump }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                   {fields.map((f) => (
                     <div key={"nom_" + f.k} className={f.full ? "sm:col-span-2" : ""}>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Nominee {f.label}<span className="text-red-500">*</span></label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Nominee {f.label}{star}</label>
                       {f.pattern === "mobile" ? (
                         <MobileInput className={inputCls(errors["owner" + i + "_nominee_" + f.k])} value={(o.nominee || {})[f.k]} placeholder={f.ph || ""}
                           onChange={(v) => setOwnerNomineeField(i, f.k, v)} />
                       ) : (
-                        <input type={f.type} className={inputCls(errors["owner" + i + "_nominee_" + f.k])} value={(o.nominee || {})[f.k] || ""} placeholder={f.ph || ""}
+                        <input type={f.type} max={f.type === "date" ? DOB_MAX : undefined} className={inputCls(errors["owner" + i + "_nominee_" + f.k])} value={(o.nominee || {})[f.k] || ""} placeholder={f.ph || ""}
                           onChange={(e) => setOwnerNomineeField(i, f.k, e.target.value)} />
                       )}
                       <ErrorText msg={errors["owner" + i + "_nominee_" + f.k]} />
@@ -1822,8 +2032,9 @@ function DocsBody({ step, A, state, errors, bump }) {
   function remove(it) {
     delete state.documents[it];
     bump();
-    if (state.leadContact?.leadId) {
-      removeApplicationDocument({ leadId: state.leadContact.leadId, docLabel: it }).catch((err) => {
+    // Existing clients' uploads are keyed by companyId instead (no Lead).
+    if (state.leadContact?.leadId || state.companyId) {
+      removeApplicationDocument({ leadId: state.leadContact?.leadId, companyId: state.companyId, docLabel: it }).catch((err) => {
         console.error("Document remove failed (non-fatal):", err);
       });
     }
@@ -2141,7 +2352,13 @@ function TmSearchBody({ flow, step, A, state, errors, setAnswer, bump, liveState
       <FieldsBody step={step} A={A} errors={errors} setAnswer={setAnswer} state={state} bump={bump} liveStateNames={liveStateNames} />
       <p className="text-sm text-gray-700 mt-5 mb-3">We'll check the public register for identical or similar marks to <b>{A.tm_name || "your trademark"}</b> in {A.tm_class || "the selected class"}.</p>
       <button type="button" onClick={run} disabled={saving} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-60">🔍 {saving ? "Saving your details…" : isCurrent ? "Run search again" : "Run Public Trademark Search"}</button>
-      {isCurrent && <div className="mt-3"><Note variant="info" body="Search completed. Continue to view the results." /></div>}
+      {isCurrent && (
+        <div className="mt-4 space-y-3">
+          <div className="font-semibold text-sm text-gray-800">Search Results</div>
+          <TmResultsBody A={A} state={state} />
+          <TmRiskNote A={A} state={state} />
+        </div>
+      )}
       <ErrorText msg={errors.__search} />
     </div>
   );
@@ -2153,7 +2370,7 @@ function TmResultsBody({ A, state }) {
   if (!r.length) return <Note variant="ok" body={`No identical or closely similar trademarks found in the public register for "${A.tm_name || ""}" in ${A.tm_class || "the selected class"}.`} />;
   return (
     <div>
-      <Note variant="warn" body={`${r.length} potentially similar trademark(s) found in the public register. Review the assessment on the next step.`} />
+      <Note variant="warn" body={`${r.length} potentially similar trademark(s) found in the public register. Review them before proceeding.`} />
       <div className="overflow-x-auto mt-3 border border-gray-200 rounded-lg">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
@@ -2177,6 +2394,157 @@ function TmRiskNote({ A, state }) {
   if (!isCurrent) return <Note variant="warn" body="Please run the public trademark search first to see the assessment." />;
   const risk = tmRiskLevel(state.tmSearch?.results || []);
   return <Note variant={risk.variant === "ok" ? "ok" : "warn"} title={`Risk level: ${risk.level}`} body={risk.note} />;
+}
+
+/* ---------------------------------------------------------------------------
+   Trademark Details — one card per mark, each filed as its own application
+   (see tmMarks in existingCompanyData.js for why).
+--------------------------------------------------------------------------- */
+function Pills({ value, opts, onChange, bad }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {opts.map((o) => (
+        <button key={o} type="button" onClick={() => onChange(o)}
+          className={`px-3 py-1.5 rounded-lg border text-sm ${value === o ? "border-blue-500 bg-blue-50 text-blue-700 font-semibold" : bad ? "border-red-400 bg-red-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const TM_TEXT_LABEL = { "Word mark": "Words to register", Logo: "Words in the logo (if any)", Tagline: "Tagline" };
+
+function TmMarksBody({ flow, A, state, errors, setAnswer, bump }) {
+  // First visit: start from the name already searched, as the one word mark.
+  if (!Array.isArray(A.tm_marks) || !A.tm_marks.length) A.tm_marks = tmMarks(A);
+  const marks = A.tm_marks;
+  if (!state.tmMarkSearch) state.tmMarkSearch = {};
+  const searched = (A.tm_name || "").trim().toLowerCase();
+  const perApp = (flow.serviceLines?.(A) || [])[0];
+  const govt = tmGovtFee(A);
+
+  function clearMarkErrors(i) {
+    Object.keys(errors).forEach((k) => { if (i == null ? k.startsWith("mark") : k.startsWith(`mark${i}_`)) delete errors[k]; });
+  }
+  function setField(i, k, v) {
+    clearMarkErrors(i);
+    setAnswer("tm_marks", marks.map((m, j) => (j === i ? { ...m, [k]: v } : m)));
+  }
+  function add(type) {
+    delete errors.__marks;
+    setAnswer("tm_marks", [...marks, newTmMark(type)]);
+  }
+  function remove(i) {
+    clearMarkErrors(); // indices shift
+    setAnswer("tm_marks", marks.filter((_, j) => j !== i));
+  }
+  function search(text) {
+    state.tmMarkSearch[text.trim().toLowerCase()] = runTrademarkSearchSim(text.trim(), A.tm_class);
+    bump();
+  }
+  const err = (i, k) => errors[`mark${i}_${k}`];
+
+  return (
+    <div>
+      <Note variant="info" title="One application per mark"
+        body="The Trademark Registry protects exactly what is filed, so each word mark, each logo and each tagline is a separate application. If your brand, company and product names are the same words, that's still just one word mark." />
+      <ErrorText msg={errors.__marks} />
+
+      <div className="space-y-4 mt-4">
+        {marks.map((m, i) => {
+          const key = (m.text || "").trim().toLowerCase();
+          const results = key && key !== searched ? state.tmMarkSearch[key] : null;
+          const risk = results && tmRiskLevel(results);
+          return (
+            <div key={i} className="border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+              <div className="flex items-center justify-between mb-3">
+                <b className="flex items-center gap-2 text-sm">
+                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                  Application {i + 1} — {tmMarkLabel(m, i)}
+                </b>
+                {marks.length > 1 && <button type="button" onClick={() => remove(i)} className="text-xs text-red-500 hover:underline">Remove</button>}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Type of mark<span className="text-red-500">*</span></label>
+                  <Pills value={m.type} opts={TM_MARK_TYPES} onChange={(v) => setField(i, "type", v)} bad={err(i, "type")} />
+                  <ErrorText msg={err(i, "type")} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {TM_TEXT_LABEL[m.type] || "Mark"}
+                    {m.type === "Logo" ? <span className="text-gray-400 font-normal"> (optional)</span> : <span className="text-red-500">*</span>}
+                  </label>
+                  <input className={inputCls(err(i, "text"))} value={m.text} onChange={(e) => setField(i, "text", e.target.value)}
+                    placeholder={m.type === "Tagline" ? "e.g. Start. Run. Grow." : m.type === "Logo" ? "e.g. BIZPOLE (leave blank for a symbol-only logo)" : "e.g. Bizpole"} />
+                  <ErrorText msg={err(i, "text")} />
+                  {m.type === "Logo" ? (
+                    <p className="text-xs text-gray-500 mt-1">Upload this logo in the Documents step. Logos can't be searched by text — our attorney checks for similar logos before filing.</p>
+                  ) : key && key === searched ? (
+                    <p className="text-xs text-green-700 mt-1">✓ Searched in the Public Trademark Search step.</p>
+                  ) : key ? (
+                    <div className="mt-2">
+                      <button type="button" onClick={() => search(m.text)} className="text-xs font-semibold text-blue-600 hover:underline">🔍 {results ? "Search again" : "Run public search for this mark"}</button>
+                      {risk && <div className="mt-2"><Note variant={risk.variant === "ok" ? "ok" : "warn"} title={`${results.length} similar mark(s) — risk: ${risk.level}`} body={risk.note} /></div>}
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Language / script<span className="text-red-500">*</span></label>
+                  <select className={inputCls(err(i, "language"))} value={m.language} onChange={(e) => setField(i, "language", e.target.value)}>
+                    <option value="">Select…</option>
+                    {TM_LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                  <ErrorText msg={err(i, "language")} />
+                </div>
+                <div />
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Already being used?<span className="text-red-500">*</span></label>
+                  <Pills value={m.inUse} opts={["Yes", "No"]} onChange={(v) => setField(i, "inUse", v)} bad={err(i, "inUse")} />
+                  <ErrorText msg={err(i, "inUse")} />
+                </div>
+                {m.inUse === "Yes" ? (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">In use since<span className="text-red-500">*</span></label>
+                    <input type="date" className={inputCls(err(i, "useSince"))} value={m.useSince} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setField(i, "useSince", e.target.value)} />
+                    <ErrorText msg={err(i, "useSince")} />
+                  </div>
+                ) : <div />}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Filed for this mark before?<span className="text-red-500">*</span></label>
+                  <Pills value={m.applied} opts={["Yes", "No"]} onChange={(v) => setField(i, "applied", v)} bad={err(i, "applied")} />
+                  <ErrorText msg={err(i, "applied")} />
+                </div>
+                {m.applied === "Yes" && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Previous application number<span className="text-red-500">*</span></label>
+                    <input className={inputCls(err(i, "appNo"))} value={m.appNo} onChange={(e) => setField(i, "appNo", e.target.value)} />
+                    <ErrorText msg={err(i, "appNo")} />
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-4">
+        {TM_MARK_TYPES.map((t) => (
+          <button key={t} type="button" onClick={() => add(t)} className="px-3 py-2 rounded-lg border border-dashed border-blue-300 text-sm font-semibold text-blue-600 hover:bg-blue-50">
+            + Add {t.toLowerCase()}
+          </button>
+        ))}
+      </div>
+
+      {perApp && (
+        <div className="mt-4">
+          <Note variant="info" title={`You're filing ${marks.length} application${marks.length === 1 ? "" : "s"}`}
+            body={`Each application: ${rupee(perApp.professionalFee)} professional fee + ${rupee(govt)} government fee (+ GST on the professional fee).${govt > 4500 ? " The ₹9,000 government fee applies to a company/LLP/partnership without MSME (Udyam) or Startup India registration." : ""}`} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ---------------------------------------------------------------------------
@@ -2214,6 +2582,12 @@ function reviewRows(flowId, A, state) {
       const items = docItems(s, A, state);
       items.forEach((it) => { if (state.documents[it]) rows.push([it, state.documents[it].name]); });
       if (!rows.length) rows.push(["Documents", "No documents attached"]);
+    } else if (s.type === "tmMarks") {
+      tmMarks(A).forEach((m, mi) => {
+        const use = m.inUse === "Yes" ? `in use since ${m.useSince || "—"}` : "not yet in use";
+        const filed = m.applied === "Yes" ? `filed before (${m.appNo || "—"})` : null;
+        rows.push([`Application ${mi + 1}`, [tmMarkLabel(m, mi), m.language, use, filed].filter(Boolean).join(" · ")]);
+      });
     } else if (s.id === "class") {
       rows.push(["Trademark class", A.tm_class || "Not selected yet"]);
     } else if (s.id === "results") {
@@ -2330,6 +2704,87 @@ const PAY_METHODS = [
   [CALLBACK_METHOD, "Our advisor will call you to go over the quote and payment"],
 ];
 
+/* ---------------------------------------------------------------------------
+   Packages — between Review and Payment. Offers the subscription packages
+   (same backend data as the Subscription "Package Plans" page) for the
+   business type chosen here, matched by name against ServiceType, then lets
+   the applicant either go on to Payment or request a call instead.
+--------------------------------------------------------------------------- */
+const normName = (s) => String(s || "").toLowerCase().replace(/\(.*?\)/g, "").replace(/[^a-z0-9]/g, "");
+function PackagesBody({ A, state, bump, onPay, onCallback, onBack }) {
+  const [plans, setPlans] = useState(null); // null = loading
+  const wanted = A.businessType || state.serviceType;
+  useEffect(() => {
+    let alive = true;
+    getAllServiceTypes()
+      .then((types) => {
+        const w = normName(wanted);
+        const match = (types || []).find((t) => {
+          const n = normName(t.Service_Name || t.service_name);
+          return n && w && (n === w || n.includes(w) || w.includes(n));
+        });
+        return match ? getPackagesByServiceType(match.Id || match.id) : [];
+      })
+      .then((p) => { if (alive) setPlans(p || []); })
+      .catch(() => { if (alive) setPlans([]); });
+    return () => { alive = false; };
+  }, [wanted]);
+
+  const selectedId = A.selectedPackage?.id;
+  function pick(p) {
+    const id = p.PackageID || p.id;
+    A.selectedPackage = selectedId === id ? null : { id, name: p.PackageName || p.name, price: Number(p.YearlyMRP || p.price || 0) };
+    bump();
+  }
+
+  return (
+    <div>
+      <h3 className="text-base font-semibold">We have packages for you</h3>
+      <p className="text-sm text-gray-500 mt-1 mb-4">Bundle your {state.serviceType} with a package — or skip this and go straight to payment.</p>
+      {plans === null ? (
+        <p className="text-sm text-gray-400 py-6 text-center">Loading packages…</p>
+      ) : plans.length === 0 ? (
+        <Note variant="info" body="No packages are available for this registration right now. You can continue to payment or request a call." />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {plans.map((p, i) => {
+            const id = p.PackageID || p.id;
+            const on = selectedId === id;
+            return (
+              <button key={id || i} type="button" onClick={() => pick(p)}
+                className={`text-left border-2 rounded-xl p-4 transition ${on ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-blue-200"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <b className="text-sm">{p.PackageName || p.name}</b>
+                  <span className={`flex-none w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] ${on ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300"}`}>{on ? "✓" : ""}</span>
+                </div>
+                <div className="text-lg font-bold mt-1">{rupee(Number(p.YearlyMRP || p.price || 0))}<span className="text-xs font-normal text-gray-500"> / year</span></div>
+                {(p.Description || p.description) && <p className="text-xs text-gray-500 mt-1">{p.Description || p.description}</p>}
+                {p.services?.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {p.services.map((s, si) => <li key={s.ID || si} className="text-xs text-gray-700">✓ {s.ServiceName}</li>)}
+                  </ul>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-6 border-t border-gray-100 pt-5">
+        <h3 className="text-base font-semibold mb-3">Would you like to pay and continue, or request a call?</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button onClick={onPay} className="py-3 rounded-lg bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700">💳 Pay &amp; Continue →</button>
+          <button onClick={onCallback} disabled={state.__paying} className="py-3 rounded-lg border-2 border-blue-500 text-blue-700 font-semibold text-sm disabled:opacity-60">
+            {state.__paying ? "Submitting…" : "📞 Request a Call"}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">Requesting a call saves your quote — one of our advisors will call you. Nothing is charged now.</p>
+        <button onClick={onBack} className="w-full mt-3 py-2.5 rounded-lg text-gray-500 text-sm font-semibold hover:bg-gray-50">← Back</button>
+      </div>
+    </div>
+  );
+}
+
 function PaymentBody({ flow, A, state, bump, onPay, onCallback, onBack }) {
   useEffect(() => {
     if (!state.gstInfo) ensureGstInfo(state).then(bump).catch(() => {});
@@ -2340,6 +2795,7 @@ function PaymentBody({ flow, A, state, bump, onPay, onCallback, onBack }) {
     <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
       <div className="border border-gray-200 rounded-xl p-4">
         <h3 className="font-semibold mb-2">Fee summary</h3>
+        {A.selectedPackage && <div className="mb-3"><Note variant="info" body={`Package selected: ${A.selectedPackage.name} (${rupee(A.selectedPackage.price)} / year). Our team will add it to your quote — it isn't included in the total below.`} /></div>}
         <div className="text-xs font-bold uppercase text-blue-600 mt-3 mb-1">Service charges</div>
         <div className="flex justify-between text-sm py-2 border-b border-dashed border-gray-100"><span>{state.serviceType} — professional fee</span><b>{rupee(f.service)}</b></div>
         {f.addonLines.length > 0 && <div className="text-xs font-bold uppercase text-blue-600 mt-3 mb-1">Additional services</div>}

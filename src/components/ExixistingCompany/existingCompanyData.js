@@ -525,7 +525,15 @@ export function newcoBusinessSteps(A) {
     { id: "address", title: "Business Address", fields: [
       ...addressFields("", "Where will the business operate from?"),
       ynField("isRegisteredAddress", "Is this the registered business address?", { full: true }),
-      cardsField("propertyType", "Do you own or rent this property?", ["Owned", "Rented", "Leased", "Other"], { cols: 2, full: true }),
+      // Not the registered address → either Bizpole arranges a virtual office
+      // (just the preferred location), or the applicant enters their separate
+      // registered office address below.
+      ynField("wantsVirtualOffice", "Are you looking for a virtual office?", { full: true, showIf: (A) => A.isRegisteredAddress === "No" }),
+      noteField(() => ({ variant: "info", body: "Our team will arrange a virtual office to use as your registered business address. Tell us where you'd like it." }), { full: true, showIf: (A) => A.isRegisteredAddress === "No" && A.wantsVirtualOffice === "Yes" }),
+      pickField("vo_state", "Preferred State for Virtual Office", STATES, { showIf: (A) => A.isRegisteredAddress === "No" && A.wantsVirtualOffice === "Yes" }),
+      textField("vo_city", "Preferred City for Virtual Office", { showIf: (A) => A.isRegisteredAddress === "No" && A.wantsVirtualOffice === "Yes" }),
+      ...addressFields("reg", "Registered office address").map((f) => ({ ...f, ...(f.label && { label: "Registered " + f.label }), showIf:(A) => A.isRegisteredAddress === "No" && A.wantsVirtualOffice === "No" })),
+      cardsField("propertyType", "Do you own or rent this property?", ["Owned", "Rented", "Leased", "Other"], { cols: 2, full: true, showIf: (A) => A.isRegisteredAddress === "Yes" || A.wantsVirtualOffice === "No" }),
     ] },
     { id: "owners", title: (ownerConfig(A)).label, type: "owners" },
     docStep([], {
@@ -540,13 +548,52 @@ export function newcoBusinessSteps(A) {
           if (isMinor(o.dob)) items.push(`Nominee ID Proof – ${label}`);
           return { title: label, items };
         });
-        groups.push({ title: "Company Documents", items: ["Registered Office Address Proof", "NOC, if applicable", "Other Supporting Document"] });
+        // A virtual office is arranged by Bizpole, so there's no office of the
+        // applicant's own to prove — skip the Company Documents section then.
+        const virtualOffice = A.isRegisteredAddress === "No" && A.wantsVirtualOffice === "Yes";
+        if (!virtualOffice) groups.push({ title: "Company Documents", items: ["Registered Office Address Proof", "NOC, if applicable", "Other Supporting Document"] });
         return groups;
       },
     }),
     addonStep(),
   ];
   return s;
+}
+
+/* ---------------------------------------------------------------------------
+   Trademark: one application per mark. The Registry protects exactly the
+   representation filed, so each distinct word mark, each logo and each tagline
+   is its own application with its own government fee — the same words used as
+   brand/company/product name are still just one word mark. Marks live on
+   A.tm_marks (edited on the "Trademark Details" step, see FlowRunner's
+   TmMarksBody); until that step is reached, the searched name counts as the
+   one word mark.
+--------------------------------------------------------------------------- */
+export const TM_MARK_TYPES = ["Word mark", "Logo", "Tagline"];
+export const TM_LANGUAGES = ["English", "Hindi", "Regional language", "Other"];
+export function newTmMark(type = "Word mark", text = "") {
+  return { type, text, language: "", inUse: "", useSince: "", applied: "", appNo: "" };
+}
+export function tmMarks(A) {
+  return Array.isArray(A.tm_marks) && A.tm_marks.length ? A.tm_marks : [newTmMark("Word mark", A.tm_name || "")];
+}
+export function tmMarkLabel(m, i) {
+  const text = (m.text || "").trim();
+  return `${m.type}${text ? `: ${text}` : ` ${i + 1}`}`;
+}
+// Statutory fee per application per class: ₹4,500 for an individual or an
+// MSME/Startup India-registered entity, ₹9,000 for any other applicant.
+export function tmGovtFee(A) {
+  return A.tm_ownerType && A.tm_ownerType !== "Individual" && A.tm_startup !== "Yes" ? 9000 : 4500;
+}
+// Logo uploads are numbered among the logo marks only, so a word mark being
+// added/removed never renames (and orphans) an uploaded logo.
+export function tmLogoDocLabel(n) {
+  return `Logo Artwork – Logo ${n}`;
+}
+// One fee line per application (feeLines() in FlowRunner prices each).
+export function tmServiceLines(A, name, price) {
+  return tmMarks(A).map((m, i) => ({ name: `${name} – ${tmMarkLabel(m, i)}`, professionalFee: price, governmentFee: tmGovtFee(A) }));
 }
 
 export const TRADEMARK_FLOW = {
@@ -565,6 +612,7 @@ export const TRADEMARK_FLOW = {
   // owner fields that Company needs live on that step. Continue from it then
   // converts the Lead to a Deal — see FlowRunner's goNext().
   convertAtStep: "search",
+  serviceLines: (A) => tmServiceLines(A, TRADEMARK_FLOW.name, TRADEMARK_FLOW.price),
   steps: () => [
     { id: "nature", title: "Nature of Business", fields: [cardsField("tm_nature", "What is the nature of your business?", TM_NATURE, { cols: 3 })] },
     { id: "product", title: "Business / Product / Service Details", fields: [
@@ -597,23 +645,19 @@ export const TRADEMARK_FLOW = {
       // Only an individual applicant can be a minor — a Company/LLP/Partnership can't.
       ...personMinorFields("tm_owner", (A) => A.tm_ownerType === "Individual"),
     ] },
-    { id: "details", title: "Trademark Details", fields: [
-      checksField("tm_what", "What do you want to protect?", ["Brand Name", "Logo", "Product Name", "Service Name", "Company Name", "Tagline", "Other"], { cols: 3, full: true }),
-      textField("tm_tagline", "Tagline", { required: false, showIf: (A) => (A.tm_what || []).includes("Tagline") || (A.tm_what || []).includes("Brand Name") }),
-      pickField("tm_language", "Language / script", ["English", "Hindi", "Regional language", "Other"]),
-      noteField(() => ({ variant: "info", body: "Logo selected. You'll be asked to upload the logo artwork in the Documents step — a clear PNG or JPG on a white background works best." }), { showIf: (A) => (A.tm_what || []).includes("Logo"), full: true }),
-      ynField("tm_inUse", "Is the trademark already being used?", { full: true }),
-      textField("tm_useSince", "In use since (date)", { type: "date", showIf: (A) => A.tm_inUse === "Yes" }),
-      ynField("tm_applied", "Has an application been filed for this mark before?", { full: true }),
-      textField("tm_appNo", "Previous application number", { showIf: (A) => A.tm_applied === "Yes" }),
-    ] },
-    { id: "documents", title: "Documents Upload", type: "docs", dynamicItems: (A) => {
+    // One card per mark = one application each (see tmMarks above).
+    { id: "details", title: "Trademark Details", type: "tmMarks" },
+    { id: "documents", title: "Documents Upload", type: "docs", groupedItems: (A) => {
+      const marks = tmMarks(A);
+      const logos = marks.filter((m) => m.type === "Logo");
+      const groups = [];
+      if (logos.length) groups.push({ title: "Logo Artwork (one per logo application)", items: logos.map((_, i) => tmLogoDocLabel(i + 1)) });
       const base = ["PAN of Applicant", "Aadhaar / ID Proof", "Business Registration Certificate", "Signed Form TM-48 (Power of Attorney)"];
-      if ((A.tm_what || []).includes("Logo")) base.splice(1, 0, "Logo Artwork (PNG / JPG)");
-      if (A.tm_inUse === "Yes") base.push("Proof of Use (invoice, packaging, listing)");
+      if (marks.some((m) => m.inUse === "Yes")) base.push("Proof of Use (invoice, packaging, listing)");
       if (A.tm_startup === "Yes") base.push("MSME / Startup Certificate");
       base.push("Other Supporting Document");
-      return base;
+      groups.push({ title: "Applicant Documents", items: base });
+      return groups;
     } },
   ],
 };
@@ -1081,6 +1125,18 @@ export const FLOWS = {
 
   "ex-trademark": {
     name: "Trademark Service", code: "TM", price: 4999, govt: 4500, kind: "Existing Company",
+    // "New Trademark" reuses TRADEMARK_FLOW's steps, so it gets the same
+    // backend wiring: "Run Public Trademark Search" signs the applicant up
+    // (OTP) and creates the Customer + Company (see FlowRunner's TmSearchBody),
+    // and Continue from that step converts the Lead to a Deal. Without a
+    // company name here both of those silently no-op. Other needs have no
+    // "search" step, so convertAtStep never matches for them.
+    serviceIdFor: (A) => (A.ex_tm_need === "New Trademark" ? TRADEMARK_FLOW.serviceId : null),
+    companyNameFor: (A) => A.ex_name || A.tm_ownerName,
+    convertAtStep: "search",
+    // New Trademark: one fee line per mark (see tmMarks). Other needs keep
+    // the single flat line.
+    serviceLines: (A) => (A.ex_tm_need === "New Trademark" ? tmServiceLines(A, FLOWS["ex-trademark"].name, FLOWS["ex-trademark"].price) : null),
     steps: (A) => {
       const need = A.ex_tm_need;
       const s = [{ id: "need", title: "Trademark Requirement", fields: [

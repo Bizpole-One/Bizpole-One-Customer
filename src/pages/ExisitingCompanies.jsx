@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getSecureItem, setSecureItem, removeSecureItem } from "../utils/secureStorage";
 import { signedInContact, cachedCompany, existingCompanyAnswers } from "../utils/applicationPrefill";
 import ExistingNeedsMenu from "../components/ExixistingCompany/ExistingNeedsMenu";
@@ -10,6 +10,7 @@ const SELECTION_KEY = "existingCompanySelection";
 
 const ExisitingCompanies = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   // From the dashboard: companyId = the company selected in its switcher (to
   // prefill from); resumeFlow = reopen that in-progress application directly.
   const { companyId, resumeFlow } = location.state || {};
@@ -40,7 +41,10 @@ const ExisitingCompanies = () => {
   return (
     <div className="exco-theme min-h-screen bg-gray-50">
       {selection ? (
-        <FlowRunner key={selection.flow} flowId={selection.flow} initialSet={selection.set} onExit={handleExit} />
+        // onSkip: from Documents on, "Skip for now — go to dashboard" (same as
+        // the New Company flows). Progress stays saved, so the dashboard's
+        // in-progress list can reopen it here (resumeFlow).
+        <FlowRunner key={selection.flow} flowId={selection.flow} initialSet={selection.set} onExit={handleExit} onSkip={() => navigate("/dashboard/bizpoleone")} />
       ) : (
         <ExistingNeedsMenu onSelect={handleSelect} />
       )}
