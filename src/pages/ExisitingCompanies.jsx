@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getSecureItem, setSecureItem, removeSecureItem } from "../utils/secureStorage";
 import { signedInContact, cachedCompany, existingCompanyAnswers } from "../utils/applicationPrefill";
+import { getCompanyIdFromStorage } from "../api/SupportTickets/SupportTicket";
 import ExistingNeedsMenu from "../components/ExixistingCompany/ExistingNeedsMenu";
 import FlowRunner from "../components/ExixistingCompany/FlowRunner";
 import "../components/ExixistingCompany/existingco-theme.css";
@@ -27,7 +28,11 @@ const ExisitingCompanies = () => {
   const handleSelect = (item) => {
     // Signed-in customer: prefill the company details they already gave us
     // (and their own contact) — the flow's own preset answers still win.
-    const prefill = existingCompanyAnswers(cachedCompany(companyId), signedInContact());
+    // Opened from the home page (no companyId): use the company currently
+    // selected in their dashboard, so the details match the records we hold.
+    const contact = signedInContact();
+    const company = cachedCompany(companyId || (contact && getCompanyIdFromStorage()));
+    const prefill = existingCompanyAnswers(company, contact);
     const next = { flow: item.flow, set: { ...prefill, ...(item.set || {}) } };
     setSecureItem(SELECTION_KEY, next);
     setSelection(next);

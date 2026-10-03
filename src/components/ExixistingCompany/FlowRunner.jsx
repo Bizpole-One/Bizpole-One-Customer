@@ -200,7 +200,10 @@ function syncCachedUserQuote(companyId, companyName, quote) {
 // nothing here changes for newco itself.
 function resolveCompanyName(flow, A) {
   if (typeof flow?.companyNameFor === "function") return (flow.companyNameFor(A) || "").trim();
-  return (A.nc_target || A.name1 || "").trim();
+  // Existing Company ("ex-*") flows declare no companyNameFor: a new entity's
+  // own name field (when the flow registers one) wins, else the existing
+  // company they named (ex_name) — so Documents has a Company to key off.
+  return (A.nc_target || A.name1 || A.gst_bizname || A.msme_name || A.iec_bizname || A.other_bizname || A.ex_name || "").trim();
 }
 // Address fields' key prefix for this flow's own addressFields() step (e.g.
 // "gst" -> gst_addr1/gst_state/..., "msme" -> msme_addr1/msme_state/...).
@@ -219,7 +222,17 @@ function resolveAddress(flow, A, leadContact) {
   };
 }
 
+// Customer/Company syncs in flight, per application — a second caller (e.g.
+// the Documents gate while the owners step's background sync is still
+// running) waits on that same request instead of creating a duplicate.
+const syncsInFlight = new WeakMap();
 function syncCustomerCompany(state, A, bump, flow) {
+  if (syncsInFlight.has(state)) return syncsInFlight.get(state);
+  const sync = runCustomerCompanySync(state, A, bump, flow).finally(() => syncsInFlight.delete(state));
+  syncsInFlight.set(state, sync);
+  return sync;
+}
+function runCustomerCompanySync(state, A, bump, flow) {
   if (state.companyId || !state.leadContact) return Promise.resolve(); // already synced, or no contact captured yet
   const companyName = resolveCompanyName(flow, A);
   if (!companyName) return Promise.resolve();
@@ -447,6 +460,14 @@ function validateFields(step, A, errors) {
     if (A[f.k] === "Other" && f.type === "cards" && f.otherText !== false) {
       const oe = fieldError({ required: true }, A[f.k + "__other"]);
       if (oe) errors[f.k + "__other"] = "Please specify";
+    }
+  });
+  // Preferred Names 2/3 are alternatives — repeating an earlier one adds nothing.
+  ["name2", "name3"].forEach((k, i) => {
+    const v = (A[k] || "").trim().toLowerCase();
+    const earlier = ["name1", "name2"].slice(0, i + 1).map((e) => (A[e] || "").trim().toLowerCase());
+    if (v && !errors[k] && visibleFields(step, A).some((f) => f.k === k) && earlier.includes(v)) {
+      errors[k] = "Enter a different name from your earlier choices";
     }
   });
   return errors;
@@ -710,8 +731,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
         setLeadSaving(true);
         work().finally(() => {
           setLeadSaving(false);
-          state.stepIndex = Math.min(state.stepIndex + 1, steps.length - 1);
-          bump();
+          advance();
         });
         return;
       }
@@ -723,15 +743,47 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
           .then(() => createDealForApplication(flow, state, A, bump))
           .finally(() => {
             setLeadSaving(false);
-            state.stepIndex = Math.min(state.stepIndex + 1, steps.length - 1);
-            bump();
+            advance();
           });
         return;
       }
     } else if (step.type === "owners" || flow.autoLeadGate) {
       syncCustomerCompany(state, A, bump, flow).then(() => createDealForApplication(flow, state, A, bump));
     }
-    state.stepIndex = Math.min(state.stepIndex + 1, steps.length - 1);
+    advance();
+  }
+  // Move on to the next step. Every application is a Deal before Documents
+  // (uploads are keyed by its Lead / Company, and sales should see it even if
+  // the applicant stops there), so landing on Documents first makes sure the
+  // Lead → Customer/Company → Deal all exist and waits for them — most
+  // Existing Company flows have no checking procedure / Details step to raise
+  // a Lead earlier, and the owners step's sync above runs in the background.
+  // A signed-in Customer is captured from their profile; anyone else gets the
+  // sign-up modal (closing it just leaves them on this step). Failures are
+  // non-fatal — the Payment step retries the Deal.
+  function advance() {
+    const toNext = () => {
+      state.stepIndex = Math.min(state.stepIndex + 1, steps.length - 1);
+      bump();
+    };
+    if (steps[state.stepIndex + 1]?.type !== "docs" || state.dealId) {
+      toNext();
+      return;
+    }
+    const syncThenNext = () => {
+      setLeadSaving(true);
+      syncCustomerCompany(state, A, bump, flow)
+        .then(() => createDealForApplication(flow, state, A, bump))
+        .finally(() => {
+          setLeadSaving(false);
+          toNext();
+        });
+    };
+    if (state.leadCaptured) { syncThenNext(); return; }
+    setLeadSaving(true);
+    if (leadFromSignedInCustomer(state, bump, () => { setLeadSaving(false); syncThenNext(); })) return;
+    setLeadSaving(false);
+    state.leadGate = { run: syncThenNext, reason: "documents" };
     bump();
   }
   // Discard this application from any step. Once a Deal exists it can't be
@@ -821,7 +873,9 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
         />
       )}
       <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4 flex-wrap">
-        <button onClick={goBack} className="hover:text-blue-600 hover:underline">{homeLabel || "Existing Company"}</button>
+        {/* Back to the requests menu — progress stays saved, so picking this
+            service again resumes it. */}
+        <button onClick={onExit} className="hover:text-blue-600 hover:underline">{homeLabel || "Existing Company"}</button>
         <span>›</span>
         <span className="text-gray-800 font-medium">{state.serviceType}</span>
       </nav>
@@ -942,7 +996,17 @@ function serviceDetailsFor(flow, A, state) {
 // Only the base service fee is known this early (add-ons picked on the later
 // Additional Registrations step aren't reflected yet) — the Quote at Payment
 // carries the final, authoritative figures.
-async function createDealForApplication(flow, state, A, bump) {
+// Deal creations in flight, per application — e.g. the owners step's
+// background attempt and the before-Documents one (see FlowRunner's advance())
+// share one request rather than creating two Deals.
+const dealsInFlight = new WeakMap();
+function createDealForApplication(flow, state, A, bump) {
+  if (dealsInFlight.has(state)) return dealsInFlight.get(state);
+  const deal = runCreateDeal(flow, state, A, bump).finally(() => dealsInFlight.delete(state));
+  dealsInFlight.set(state, deal);
+  return deal;
+}
+async function runCreateDeal(flow, state, A, bump) {
   if (state.dealId || !state.leadContact) return; // already converted, or no lead captured
   const companyName = resolveCompanyName(flow, A);
   // No name yet (e.g. a flow with no owners step — GST/Trademark/MSME/IEC —
@@ -1018,7 +1082,7 @@ async function createDirectDeal(flow, state, A, bump, companyName, ServiceDetail
       CompanyID: state.companyId,
       CustomerID: state.customerId,
     });
-    state.dealId = dealRes?.insertId || null;
+    state.dealId = dealRes?.dealId || dealRes?.insertId || null;
     syncCachedUserCompany(state.companyId, companyName);
     bump();
   } catch (err) {
@@ -1251,10 +1315,17 @@ async function captureExistingCustomer(state, form) {
 // Existing client's Company for this application: one they already have with
 // the same name is reused as-is; anything else (e.g. registering another
 // company) is created under their existing Customer, with no Lead.
+// Names compared loosely — case, punctuation and "Pvt"/"Ltd" spellings aside —
+// so "ABC Pvt. Ltd" typed in the flow still finds their "ABC Private Limited".
+function companyNameKey(name) {
+  return String(name || "").toLowerCase()
+    .replace(/\bpvt\b/g, "private").replace(/\bltd\b/g, "limited")
+    .replace(/[^a-z0-9]/g, "");
+}
 function matchExistingCompany(state, companyName) {
   const user = existingCustomerAccount();
-  const name = companyName.trim().toLowerCase();
-  const match = (user?.Companies || []).find((c) => String(c.BusinessName || c.CompanyName || "").trim().toLowerCase() === name);
+  const name = companyNameKey(companyName);
+  const match = (user?.Companies || []).find((c) => companyNameKey(c.BusinessName || c.CompanyName) === name);
   if (match) state.companyId = match.CompanyID;
   return !!match;
 }
@@ -1533,10 +1604,21 @@ function LeadCaptureModal({ state, bump }) {
         </button>
         {phase === "intro" && (
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Sign up to view your results</h3>
-            <p className="text-sm text-gray-600 mb-5">
-              Sign up to see your result — quick mobile verification, and your application stays saved to your account.
-            </p>
+            {state.leadGate?.reason === "documents" ? (
+              <>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Sign up to upload your documents</h3>
+                <p className="text-sm text-gray-600 mb-5">
+                  Your documents are saved securely to your account — quick mobile verification, and your application stays saved too.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Sign up to view your results</h3>
+                <p className="text-sm text-gray-600 mb-5">
+                  Sign up to see your result — quick mobile verification, and your application stays saved to your account.
+                </p>
+              </>
+            )}
             <button
               type="button"
               onClick={() => setPhase("details")}
@@ -2149,7 +2231,7 @@ function SuggestNames({ A, setAnswer, state, bump }) {
    Name Availability Check step
 --------------------------------------------------------------------------- */
 function NameCheckBody({ A, state, errors, setAnswer, bump }) {
-  const names = [A.name1, A.name2, A.name3].filter((n) => n && n.trim());
+  const names = [A.name1, A.name2, A.name3].map((n) => (n || "").trim()).filter((n, i, all) => n && all.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i);
   const result = nameCheckIsCurrent(A, state);
   function runCheck() {
     const name = (A.nc_target || "").trim();
