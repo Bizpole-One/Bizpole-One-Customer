@@ -4,6 +4,7 @@ import { getSecureItem, setSecureItem, removeSecureItem } from "../../utils/secu
 import { lookupGstin } from "../../api/GstinLookup";
 import { assignCustomer } from "../../api/CustomerApi";
 import { createLead, createCustomerCompany, convertLeadToDeal, createQuoteForApplication, uploadApplicationDocument, removeApplicationDocument } from "../../api/LeadApi";
+import { sendApplicationReceivedEmail } from "../../api/CustomerEmailApi";
 import { getAllStates } from "../../api/States";
 import { getAllServiceTypes, getPackagesByServiceType } from "../../api/ServiceType";
 import { createSupportTicket, getCompanyIdFromStorage } from "../../api/SupportTickets/SupportTicket";
@@ -22,6 +23,11 @@ import {
   selectedNiceClass, runTrademarkSearchSim, tmRiskLevel, NICE_CLASSES,
   TM_MARK_TYPES, TM_LANGUAGES, newTmMark, tmMarks, tmMarkLabel, tmGovtFee,
 } from "./existingCompanyData";
+import {
+  changeKind, loadCurrent, prefillAnswers, currentRows, changedRows, directorSummary,
+  nothingToSave, saveChange, myCompanies, personLabel,
+  loadExistingCompanyPrefill, fillExistingCompanyAnswers, ownersFromDirectors,
+} from "./companyChangeSave";
 
 const STORAGE_KEY = "existingCompanyFlowState";
 // Payment-step option that skips the Quote approval tab for an advisor call instead.
@@ -305,7 +311,24 @@ function contentSteps(flowId, A) {
   if (!flow) return [];
   return flow.steps(A).filter((s) => s && (!s.showIf || s.showIf(A)));
 }
+// A flow's direct-save mode for these answers: true (Existing Company
+// Changes — Review, then Save writes to the company), "advisor" (the last
+// step's Send raises a Lead for an advisor call), "redirect" (points
+// elsewhere, never submits), or null (normal paid application).
+function directSaveMode(flow, A) {
+  const d = flow?.directSave;
+  return (typeof d === "function" ? d(A || {}) : d) || null;
+}
 function allSteps(flowId, A) {
+  // Direct-save flows have no Packages, Payment, Deal or Quote.
+  const mode = directSaveMode(FLOWS[flowId], A);
+  if (mode === true) {
+    return contentSteps(flowId, A).concat([
+      { id: "__review", title: "Review", type: "review" },
+      { id: "__success", title: "Saved", type: "success" },
+    ]);
+  }
+  if (mode) return contentSteps(flowId, A).concat([{ id: "__success", title: "Sent", type: "success" }]);
   return contentSteps(flowId, A).concat([
     { id: "__review", title: "Review", type: "review" },
     { id: "__packages", title: "Packages", type: "packages" },
@@ -401,6 +424,11 @@ function validateStep(step, A, state) {
     if (items.includes(msmeItem) && !state.documents[msmeItem]) {
       errors.__docs = "MSME / Startup certificate is required since you said you have MSME (Udyam) or Startup India registration — upload it to continue";
     }
+  } else if (step.type === "changeCompany") {
+    if (!signedInContact()) errors.__company = "Sign in to change your company's details";
+    else if (!A.ex_company_id) errors.__company = "Choose the company you want to change";
+  } else if (step.type === "goToChange") {
+    errors.__goToChange = "Use the Existing Company Changes options to update your company";
   } else if (step.type === "leadDetails") {
     const lf = state.leadForm || {};
     if (!(lf.name || "").trim()) errors.lead_name = "Please enter your name.";
@@ -570,7 +598,11 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   const resumedRef = useRef(false);
   if (appRef.current === null) {
     const saved = getSecureItem(storageKey);
-    const resume = !!saved && saved.flowId === flowId && !belongsToOtherCustomer(saved);
+    // A direct-save flow backs several menu options (one per change_what) —
+    // only resume the one just picked, and never one that was already saved.
+    const otherOption = directSaveMode(FLOWS[flowId], saved?.answers) &&
+      (saved?.submitted || (initialSet?.change_what && saved?.answers?.change_what !== initialSet.change_what));
+    const resume = !!saved && saved.flowId === flowId && !belongsToOtherCustomer(saved) && !otherOption;
     appRef.current = resume ? saved : freshState(flowId, initialSet);
     resumedRef.current = resume;
     // An open sign-in modal gets saved too, minus its callback — never reopen
@@ -670,6 +702,117 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [stepIndex]);
 
+  // Direct-save flows: load what's on record for the chosen company + option
+  // once (state.changeCurrent, keyed by both), prefilling the answers so the
+  // customer only edits what changes. Review diffs against this same record.
+  const directMode = directSaveMode(flow, A);
+  const changeKey = directMode === true && A.ex_company_id && A.change_what ? `${A.ex_company_id}:${A.change_what}` : null;
+  useEffect(() => {
+    if (!changeKey || changeKind(A.change_what) === "other") return;
+    const cur = state.changeCurrent;
+    if (cur && cur.key === changeKey && (cur.loading || cur.data)) return;
+    state.changeCurrent = { key: changeKey, loading: true };
+    bump();
+    loadCurrent(A.change_what, A.ex_company_id)
+      .then((data) => {
+        if (state.changeCurrent?.key !== changeKey) return;
+        prefillAnswers(A.change_what, data, A);
+        state.changeCurrent = { key: changeKey, data };
+      })
+      .catch((err) => {
+        if (state.changeCurrent?.key !== changeKey) return;
+        state.changeCurrent = { key: changeKey, error: err.message || "Couldn't load your current details" };
+      })
+      .finally(bump);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changeKey, state.changeCurrent?.retry]);
+  const changeCurrent = changeKey && state.changeCurrent?.key === changeKey ? state.changeCurrent : null;
+  const changeReady = !changeKey || changeKind(A.change_what) === "other" || !!changeCurrent?.data;
+
+  // "Register another company" → related to an existing company: fill the
+  // Existing Company step from the signed-in customer's selected company
+  // (only fields still empty), once per company. Its directors are kept for
+  // the Owners step below.
+  const prefillInFlight = useRef(false);
+  useEffect(() => {
+    if (!flow?.prefillExisting || A.ex_brandNew !== "No" || !signedInContact()) return;
+    const companyId = getCompanyIdFromStorage();
+    if (!companyId || prefillInFlight.current) return;
+    if (state.exPrefill && String(state.exPrefill.companyId) === String(companyId)) return;
+    prefillInFlight.current = true;
+    loadExistingCompanyPrefill(companyId)
+      .then(({ record, directors }) => {
+        fillExistingCompanyAnswers(A, record);
+        state.exPrefill = { companyId, directors };
+      })
+      .finally(() => { prefillInFlight.current = false; bump(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [A.ex_brandNew]);
+
+  // Same owners (or some in common) → start the Owners step with the existing
+  // company's directors, if the customer hasn't entered anyone yet. Once only.
+  useEffect(() => {
+    if (step?.type !== "owners" || !flow?.prefillExisting) return;
+    const p = state.exPrefill;
+    if (!p?.directors?.length || p.ownersFilled) return;
+    if (!["Same owners/directors", "Some owners/directors are common"].includes(A.ex_relation)) return;
+    const blank = (v) => (v && typeof v === "object" ? Object.values(v).every(blank) : !String(v ?? "").trim());
+    p.ownersFilled = true;
+    if (state.owners.length <= 1 && state.owners.every(blank)) {
+      state.owners = ownersFromDirectors(p.directors, ownerConfig(A).roles || [], newOwner);
+    }
+    bump();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step?.type, state.exPrefill]);
+
+  // Review's Save for a direct-save flow — writes the change, then shows Saved.
+  function saveDirectChange() {
+    if (leadSaving) return;
+    const problem = nothingToSave(A.change_what, A, changeCurrent?.data);
+    if (problem) { errorsRef.current = { __save: problem }; bump(); return; }
+    setLeadSaving(true);
+    saveChange(A.change_what, A, changeCurrent?.data, A.ex_company_id)
+      .then((result) => {
+        errorsRef.current = {};
+        state.submitted = { direct: true, ...result, change: A.change_what, date: today() };
+        state.stepIndex = steps.length - 1;
+        bump();
+      })
+      .catch((err) => {
+        errorsRef.current = { __save: err.message || "Couldn't save your changes. Please try again." };
+        bump();
+      })
+      .finally(() => setLeadSaving(false));
+  }
+
+  // "Talk to an Advisor" (ex-business, "I'm not sure") — raises a Lead with
+  // the customer's question as a follow-up for the advisor. No Review,
+  // Packages, Payment, Deal or Quote.
+  function sendAdvisorRequest() {
+    if (leadSaving) return;
+    setLeadSaving(true);
+    raiseAdvisorLead(state, A)
+      .then(() => {
+        errorsRef.current = {};
+        state.submitted = {
+          direct: true,
+          title: "Request Sent",
+          message: "Thanks! A business advisor will call you within one working day with a recommendation.",
+          change: "Talk to an Advisor",
+          label: "Request",
+          company: A.ex_name,
+          date: today(),
+        };
+        state.stepIndex = steps.length - 1;
+        bump();
+      })
+      .catch((err) => {
+        errorsRef.current = { __save: err.message || "Couldn't send your request. Please try again." };
+        bump();
+      })
+      .finally(() => setLeadSaving(false));
+  }
+
   function goNext() {
     const errors = validateStep(step, A, state);
     if (step.type === "review" && !state.confirmed) errors.__confirm = "Please confirm before proceeding";
@@ -679,6 +822,17 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
       return;
     }
     errorsRef.current = {};
+    if (directMode === "advisor" && step.id === "advice") { sendAdvisorRequest(); return; }
+    if (directMode) {
+      if (step.type === "review") { saveDirectChange(); return; }
+      if (step.id === "new" && !changeReady) {
+        errorsRef.current = { __save: changeCurrent?.error ? "Your current details didn't load — retry above before continuing." : "Still loading your current details…" };
+        bump();
+        return;
+      }
+      advance();
+      return;
+    }
     // Details step — no OTP; Continue itself raises the Lead from the entered
     // details, then advances once that's done (Customer/Company sync below
     // needs leadContact.leadId).
@@ -880,7 +1034,9 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
         <span className="text-gray-800 font-medium">{state.serviceType}</span>
       </nav>
 
-      {step.type === "success" ? (
+      {step.type === "success" && state.submitted?.direct ? (
+        <ChangeSavedScreen state={state} storageKey={storageKey} onExit={onExit} onDashboard={onSkip} />
+      ) : step.type === "success" ? (
         <SuccessScreen state={state} onExit={onExit} onComplete={onComplete} nextLabel={nextLabel} onRetryPayment={retryPayment} />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[264px_1fr] gap-6 items-start">
@@ -925,7 +1081,10 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
             </div>
 
             {step.type === "leadDetails" && <LeadDetailsBody state={state} errors={errorsRef.current} bump={bump} />}
-            {step.type === "review" && <ReviewBody flowId={flowId} A={A} state={state} errors={errorsRef.current} onConfirm={(v) => { state.confirmed = v; bump(); }} onJump={jumpTo} />}
+            {step.type === "changeCompany" && <ChangeCompanyBody A={A} state={state} errors={errorsRef.current} setAnswer={setAnswer} bump={bump} />}
+            {step.type === "goToChange" && <GoToChangeBody onExit={onExit} />}
+            {step.type === "review" && directMode && <ChangeReviewBody A={A} state={state} current={changeCurrent?.data} errors={errorsRef.current} onConfirm={(v) => { state.confirmed = v; bump(); }} onJump={jumpTo} steps={steps} />}
+            {step.type === "review" && !directMode && <ReviewBody flowId={flowId} A={A} state={state} errors={errorsRef.current} onConfirm={(v) => { state.confirmed = v; bump(); }} onJump={jumpTo} />}
             {step.type === "packages" && <PackagesBody A={A} state={state} bump={bump} onPay={goNext} onCallback={() => doCallback(flow, state, bump)} onBack={goBack} />}
             {step.type === "payment" && <PaymentBody flow={flow} A={A} state={state} bump={bump} onPay={() => doPay(flow, state, bump)} onCallback={() => doCallback(flow, state, bump)} onBack={goBack} />}
             {step.type === "owners" && <OwnersBody A={A} state={state} errors={errorsRef.current} bump={bump} />}
@@ -938,6 +1097,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
             {step.type === "tmResults" && <TmResultsBody A={A} state={state} />}
             {step.type === "tmMarks" && <TmMarksBody flow={flow} A={A} state={state} errors={errorsRef.current} setAnswer={setAnswer} bump={bump} />}
             {!step.type && <FieldsBody step={step} A={A} errors={errorsRef.current} setAnswer={setAnswer} state={state} bump={bump} liveStateNames={liveStateNames} />}
+            {!step.type && directMode && <ErrorText msg={errorsRef.current.__save} />}
 
             {step.type !== "payment" && step.type !== "packages" && (
               <div className="flex items-center justify-between gap-3 mt-7 pt-5 border-t border-gray-100">
@@ -949,7 +1109,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
                     </button>
                   )}
                   <button onClick={goNext} disabled={leadSaving} className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60">
-                    {leadSaving ? "Saving…" : step.type === "review" ? "Proceed to Payment →" : "Continue →"}
+                    {leadSaving ? "Saving…" : directMode === "advisor" && step.id === "advice" ? "Send Request" : step.type === "review" ? (directMode ? (changeKind(A.change_what) === "other" ? "Send Request" : "Save Changes") : "Proceed to Payment →") : "Continue →"}
                   </button>
                 </div>
               </div>
@@ -1041,6 +1201,7 @@ async function runCreateDeal(flow, state, A, bump) {
       employeeId: state.leadContact.employeeId,
       isIndividual: 1,
       ServiceDetails,
+      followUpRemark: flow.dealNoteFor?.(A) || undefined,
     });
     state.dealId = dealRes?.data?.dealId || null;
     state.customerId = dealRes?.data?.customerId || state.customerId;
@@ -1081,6 +1242,7 @@ async function createDirectDeal(flow, state, A, bump, companyName, ServiceDetail
       })),
       CompanyID: state.companyId,
       CustomerID: state.customerId,
+      followUpRemark: flow.dealNoteFor?.(A) || undefined,
     });
     state.dealId = dealRes?.dealId || dealRes?.insertId || null;
     syncCachedUserCompany(state.companyId, companyName);
@@ -1117,6 +1279,22 @@ async function createQuoteForApplicationStep(flow, state, A) {
       ServiceDetails,
     });
     state.quoteId = quoteRes?.data?.QuoteID || null;
+    // "Application received" email (separate customer email service) — same
+    // Application ID the success screen shows (see doPay / doCallback). Not
+    // awaited: the email must never hold up the application.
+    sendApplicationReceivedEmail({
+      quoteId: state.quoteId,
+      applicationId: state.applicationId,
+      serviceType: state.serviceType,
+      callback: !!state.callbackRequested,
+      // Requests whose deliverable is itself an email (Trademark status report,
+      // Udyam certificate) — the email tells them what's coming and where.
+      requestType: A.ex_tm_need || A.ex_msme_need || null,
+      deliverableEmail:
+        (A.ex_tm_need === "Trademark Status" && A.tm_contactEmail) ||
+        (A.ex_msme_need === "Download Certificate" && A.msme_email) ||
+        null,
+    });
     syncCachedUserQuote(state.companyId, companyName, {
       QuoteID: state.quoteId,
       CompanyID: state.companyId,
@@ -1171,11 +1349,12 @@ async function doPay(flow, state, bump) {
   // openQuoteForApproval() for why this can't wait until after the Quote
   // creation call below.
   const approvalTab = window.open("", "_blank");
+  state.applicationId = state.applicationId || newApplicationId(flow.code);
   await createQuoteForApplicationStep(flow, state, state.answers);
   openQuoteForApproval(state, approvalTab);
   const f = feeLines(flow, state.answers, state); // after the quote, so GST info is loaded
   setTimeout(() => {
-    const id = newApplicationId(flow.code);
+    const id = state.applicationId;
     state.submitted = { id, service: state.serviceType, date: today(), amount: rupee(f.total) };
     state.__paying = false;
     state.stepIndex = allSteps(state.flowId, state.answers).length - 1;
@@ -1192,6 +1371,8 @@ async function doCallback(flow, state, bump) {
   if (state.__paying) return;
   state.__paying = true;
   bump();
+  state.applicationId = state.applicationId || newApplicationId(flow.code);
+  state.callbackRequested = true;
   await createQuoteForApplicationStep(flow, state, state.answers);
   const f = feeLines(flow, state.answers, state); // after the quote, so GST info is loaded
   if (state.quoteId || state.companyId) {
@@ -1208,7 +1389,7 @@ async function doCallback(flow, state, bump) {
       console.error("Call back ticket failed (non-fatal):", err);
     }
   }
-  state.submitted = { id: newApplicationId(flow.code), service: state.serviceType, date: today(), amount: rupee(f.total), callback: true };
+  state.submitted = { id: state.applicationId, service: state.serviceType, date: today(), amount: rupee(f.total), callback: true };
   state.__paying = false;
   state.stepIndex = allSteps(state.flowId, state.answers).length - 1;
   bump();
@@ -1269,6 +1450,44 @@ async function raiseLead(state, form) {
     state.leadContact = { ...form, leadId: dup?.existingLeadId || null, franchiseeId, employeeId: null };
   }
   state.leadCaptured = true;
+}
+
+// "Talk to an Advisor" Lead — same franchisee assignment + createLead as
+// raiseLead, but always a Lead (even for an existing client) and carrying the
+// customer's question as `followup_remark`, which the server saves as a
+// pending follow-up for the Lead's owner. A mobile that already has a Lead
+// (409) is fine: the server attached the follow-up to that Lead instead.
+async function raiseAdvisorLead(state, A) {
+  const language = String(A.ex_language || "").toLowerCase();
+  let franchiseeId = null;
+  try {
+    const assignment = await assignCustomer({ language, state: A.ex_state, district: A.ex_state });
+    franchiseeId = assignment?.franchiseeId || null;
+  } catch (err) {
+    console.warn("Franchisee assignment failed (non-fatal, lead still created):", err);
+  }
+  const remark = `Talk to an Advisor — ${String(A.ex_name || "").trim()}\nWants to: ${String(A.ex_query || "").trim()}`;
+  try {
+    const res = await createLead({
+      name: String(A.ex_contact || "").trim(),
+      mobile: String(A.ex_mobile || "").trim(),
+      email: String(A.ex_email || "").trim(),
+      state: A.ex_state,
+      preferred_language: language,
+      proposed_service: state.serviceType,
+      lead_source: `startbusiness-${state.flowId}`,
+      ...(franchiseeId ? { franchiseeId } : {}),
+      followup_remark: remark,
+    });
+    state.advisorLeadId = res?.lead?.id || null;
+  } catch (err) {
+    const data = err?.response?.data;
+    if (err?.response?.status === 409 && data?.isDuplicate) {
+      state.advisorLeadId = data.existingLeadId || null;
+      return;
+    }
+    throw new Error(data?.error || data?.message || "Couldn't send your request. Please try again.");
+  }
 }
 
 // The signed-in Customer's cached `user` payload — but only for an existing
@@ -1752,6 +1971,8 @@ function Field({ f, A, errors, setAnswer, state, bump, liveStateNames }) {
   if (f.type === "suggestNames") return <SuggestNames A={A} setAnswer={setAnswer} state={state} bump={bump} />;
   if (f.type === "tmRisk") return <TmRiskNote A={A} state={state} />;
   if (f.type === "gstinLookup") return <GstinLookupField f={f} A={A} errors={errors} setAnswer={setAnswer} state={state} bump={bump} />;
+  if (f.type === "currentRecord") return <CurrentRecordNote A={A} state={state} bump={bump} />;
+  if (f.type === "personPick") return <PersonPickField f={f} A={A} errors={errors} setAnswer={setAnswer} state={state} />;
   if (f.type === "note") {
     const content = f.render ? f.render(A) : null;
     if (f.plainLabel) return <div className="font-semibold text-sm text-gray-800">{f.render(A)}</div>;
@@ -2985,6 +3206,219 @@ function SuccessScreen({ state, onExit, onComplete, nextLabel, onRetryPayment })
           <button onClick={onExit} className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold">Back to Requests</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Existing Company Changes (FLOWS["ex-change"], directSave) — pick the
+   company, see what's on record, review the differences, save. The save
+   itself lives in companyChangeSave.js.
+--------------------------------------------------------------------------- */
+function companyName(c) {
+  return c?.BusinessName || c?.CompanyName || `Company #${c?.CompanyID}`;
+}
+
+function ChangeCompanyBody({ A, state, errors, setAnswer, bump }) {
+  const me = signedInContact();
+  const companies = me ? myCompanies() : [];
+  // Default to the company selected on the dashboard (or the only one).
+  useEffect(() => {
+    if (!me || !companies.length) return;
+    if (companies.some((c) => String(c.CompanyID) === String(A.ex_company_id))) return;
+    const preferred = getCompanyIdFromStorage();
+    const pick = companies.find((c) => String(c.CompanyID) === String(preferred)) || companies[0];
+    setAnswer("ex_company_id", pick.CompanyID);
+  });
+
+  if (!me) {
+    return (
+      <div className="space-y-3">
+        <Note variant="info" title="Sign in to continue" body="Changes are saved straight to your company's record, so we need to know it's you." />
+        <button type="button" onClick={() => { state.signIn = { then: () => {} }; bump(); }} className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">Sign in</button>
+        <ErrorText msg={errors.__company} />
+      </div>
+    );
+  }
+  if (!companies.length) {
+    return (
+      <div>
+        <Note variant="warn" title="No company found on your account" body="Add your company from the dashboard first, then come back to change its details." />
+        <ErrorText msg={errors.__company} />
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="font-semibold text-sm text-gray-800 mb-2">Which company do you want to change?<span className="text-red-500 ml-0.5">*</span></div>
+      <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+        {companies.map((c) => (
+          <OptionButton key={c.CompanyID} selected={String(c.CompanyID) === String(A.ex_company_id)} onClick={() => setAnswer("ex_company_id", c.CompanyID)}>
+            {companyName(c)}
+          </OptionButton>
+        ))}
+      </div>
+      <ErrorText msg={errors.__company} />
+    </div>
+  );
+}
+
+// "Register another company → Change/update my existing business" now points
+// here: changes save directly from the Existing Company Changes options.
+function GoToChangeBody({ onExit }) {
+  return (
+    <div className="space-y-3">
+      <Note variant="info" title="Changes are saved directly now" body="To change your business name, address, activity, owners, contact or bank details, pick the matching option under Existing Company Changes. Your changes are saved to your company straight away — no application or payment needed." />
+      <button type="button" onClick={onExit} className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700">Open Existing Company Changes</button>
+    </div>
+  );
+}
+
+function changeCurrentFor(A, state) {
+  const key = `${A.ex_company_id}:${A.change_what}`;
+  return state.changeCurrent?.key === key ? state.changeCurrent : null;
+}
+
+function CurrentRecordNote({ A, state, bump }) {
+  const cur = changeCurrentFor(A, state);
+  const kind = changeKind(A.change_what);
+  if (!cur || cur.loading || (!cur.data && !cur.error)) return <Note variant="info" body="Loading your current details…" />;
+  if (cur.error) {
+    return (
+      <div className="space-y-2">
+        <Note variant="err" title="Couldn't load your current details" body={cur.error} />
+        <button type="button" onClick={() => { state.changeCurrent = { key: cur.key, retry: (cur.retry || 0) + 1 }; bump(); }} className="text-sm font-semibold text-blue-600 hover:underline">↺ Retry</button>
+      </div>
+    );
+  }
+  const rows = currentRows(A.change_what, cur.data);
+  if (!rows.length) {
+    const body = kind === "directors" ? "No owners, directors or partners are on record yet — you can add one below."
+      : kind === "bank" ? "No bank account is on record yet — enter it below." : "No details are on record yet — enter them below.";
+    return <Note variant="info" body={body} />;
+  }
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+      <b className="block mb-1 text-gray-800">Currently on record</b>
+      <dl>
+        {rows.map(([label, value], i) => (
+          <div key={i} className="grid grid-cols-[minmax(120px,38%)_1fr] gap-3 py-1">
+            <dt className="text-gray-500">{label}</dt><dd className="font-medium break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {kind !== "directors" && <p className="text-xs text-gray-500 mt-2">Edit the fields below — only what you change will be saved.</p>}
+    </div>
+  );
+}
+
+function PersonPickField({ f, A, errors, setAnswer, state }) {
+  const people = changeCurrentFor(A, state)?.data?.people || [];
+  if (!people.length) {
+    return (
+      <div>
+        <Note variant="warn" body="No one is on record yet, so there's no one to remove or change. Choose Add instead." />
+        <ErrorText msg={errors[f.k]} />
+      </div>
+    );
+  }
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}<ReqMark f={f} A={A} /></label>
+      <select className={inputCls(errors[f.k])} value={A[f.k] || ""} onChange={(e) => setAnswer(f.k, e.target.value)}>
+        <option value="">Select…</option>
+        {people.map((p) => <option key={p.ID} value={String(p.ID)}>{personLabel(p)}</option>)}
+      </select>
+      <ErrorText msg={errors[f.k]} />
+    </div>
+  );
+}
+
+const reviewRowCls = "grid grid-cols-[minmax(120px,38%)_1fr] gap-3 py-2 border-b border-dashed border-gray-100 last:border-0";
+
+function ChangeReviewBody({ A, state, current, errors, onConfirm, onJump, steps }) {
+  const kind = changeKind(A.change_what);
+  const company = myCompanies().find((c) => String(c.CompanyID) === String(A.ex_company_id));
+  const editIndex = steps.findIndex((s) => s.id === "new");
+  const changes = kind === "company" || kind === "bank" ? changedRows(A.change_what, A, current) : [];
+  return (
+    <div>
+      <div className="border border-gray-200 rounded-lg overflow-hidden mb-3">
+        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200"><b className="text-sm">Change</b></div>
+        <dl className="px-4 py-1 text-sm">
+          <div className={reviewRowCls}><dt className="text-gray-500">Company</dt><dd className="font-medium">{company ? companyName(company) : "—"}</dd></div>
+          <div className={reviewRowCls}><dt className="text-gray-500">What</dt><dd className="font-medium">{A.change_what}</dd></div>
+        </dl>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg overflow-hidden mb-3">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+          <b className="text-sm">{kind === "other" ? "Your request" : "What will change"}</b>
+          {editIndex !== -1 && <button onClick={() => onJump(editIndex)} className="text-xs text-blue-600 hover:underline">✎ Edit</button>}
+        </div>
+        <div className="px-4 py-2 text-sm">
+          {(kind === "company" || kind === "bank") && (changes.length ? (
+            <table className="w-full">
+              <thead><tr className="text-left text-xs text-gray-500"><th className="py-1.5 font-medium">Field</th><th className="py-1.5 font-medium">From</th><th className="py-1.5 font-medium">To</th></tr></thead>
+              <tbody>
+                {changes.map(([label, from, to]) => (
+                  <tr key={label} className="border-t border-dashed border-gray-100 align-top">
+                    <td className="py-2 pr-3 text-gray-500">{label}</td>
+                    <td className="py-2 pr-3 text-gray-400 line-through break-words">{from || "—"}</td>
+                    <td className="py-2 font-medium break-words">{to || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <p className="py-2 text-gray-500">Nothing has changed yet.</p>)}
+          {kind === "directors" && (
+            <dl>
+              {directorSummary(A, current).map(([label, value], i) => (
+                <div key={i} className={reviewRowCls}><dt className="text-gray-500">{label}</dt><dd className="font-medium break-words">{value || "—"}</dd></div>
+              ))}
+            </dl>
+          )}
+          {kind === "other" && (
+            <dl>
+              <div className={reviewRowCls}><dt className="text-gray-500">Requested change</dt><dd className="font-medium whitespace-pre-wrap break-words">{A.new_other || "—"}</dd></div>
+              <div className={reviewRowCls}><dt className="text-gray-500">On record now</dt><dd className="font-medium whitespace-pre-wrap break-words">{A.cur_other || "—"}</dd></div>
+            </dl>
+          )}
+        </div>
+      </div>
+
+      {kind !== "other" && (
+        <Note variant="info" body="This updates your company's details with us straight away. It doesn't file anything with government registries — if your change needs a filing, your advisor can help." />
+      )}
+      <label className="flex items-start gap-3 bg-gray-50 border border-gray-200 rounded-lg p-4 mt-4 cursor-pointer">
+        <input type="checkbox" className="mt-0.5 w-4 h-4 accent-blue-600" checked={state.confirmed} onChange={(e) => onConfirm(e.target.checked)} />
+        <span className="text-sm font-medium">I confirm these details are correct and that I am authorised to change them for this company.</span>
+      </label>
+      <ErrorText msg={errors.__confirm} />
+      <ErrorText msg={errors.__save} />
+    </div>
+  );
+}
+
+function ChangeSavedScreen({ state, storageKey, onExit, onDashboard }) {
+  const s = state.submitted || {};
+  // Saved — nothing left to resume.
+  useEffect(() => { removeSecureItem(storageKey); }, [storageKey]);
+  const company = s.company ? { BusinessName: s.company } : myCompanies().find((c) => String(c.CompanyID) === String(state.answers.ex_company_id));
+  return (
+    <div className="max-w-xl mx-auto text-center bg-white border border-gray-200 rounded-xl shadow-sm p-8">
+      <div className="w-16 h-16 rounded-full bg-green-100 text-green-600 text-3xl flex items-center justify-center mx-auto mb-4">✓</div>
+      <h1 className="text-2xl font-bold text-gray-900">{s.title || "Saved"}</h1>
+      <p className="text-gray-500 mt-2">{s.message}</p>
+      <div className="text-left border border-gray-200 rounded-lg p-4 mt-5">
+        <div className="flex justify-between gap-3 text-sm py-2 border-b border-dashed border-gray-100"><span className="text-gray-500">Company</span><b className="text-right">{company ? companyName(company) : "—"}</b></div>
+        <div className="flex justify-between gap-3 text-sm py-2 border-b border-dashed border-gray-100"><span className="text-gray-500">{s.label || "Change"}</span><b>{s.change}</b></div>
+        <div className="flex justify-between gap-3 text-sm py-2"><span className="text-gray-500">Date</span><b>{s.date || today()}</b></div>
+      </div>
+      <div className="flex gap-3 justify-center flex-wrap mt-6">
+        <button onClick={onExit} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold">Make Another Change</button>
+        {onDashboard && <button onClick={onDashboard} className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold">Go to Dashboard</button>}
+      </div>
     </div>
   );
 }
