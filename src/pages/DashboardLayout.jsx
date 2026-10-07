@@ -94,6 +94,13 @@ const DashboardLayout = () => {
               CompanyName: targetCompany.BusinessName,
               State: targetCompany.State || ""
             }));
+            // Child pages' effects run before this one, so on a reload they've
+            // already fetched with the previously stored company. If the saved
+            // company wasn't valid and we fell back to another one, tell them
+            // to reload for the company actually selected.
+            if (String(targetCompany.CompanyID) !== String(savedCompanyId)) {
+              window.dispatchEvent(new Event("company-switched"));
+            }
           }
         }
       } else {
