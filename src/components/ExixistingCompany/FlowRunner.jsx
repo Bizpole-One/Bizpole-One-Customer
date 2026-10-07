@@ -813,7 +813,31 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
       .finally(() => setLeadSaving(false));
   }
 
+  // Once the applicant has closed a sign-in popup (LeadCaptureModal or
+  // SigninModal) without signing in, every later move — Continue, Back, the
+  // sidebar, Review & Approve / Call Back — asks them to sign in (OTP) first,
+  // and only goes ahead once they have. Otherwise they could finish the whole
+  // application signed out, and token-dependent steps (e.g. the application
+  // received email) would silently skip.
+  function needsSignIn() {
+    if (!state.signInDismissed) return false;
+    if (localStorage.getItem("token")) { state.signInDismissed = false; return false; }
+    return true;
+  }
+  // The re-ask is the plain site Sign In (mobile/email + OTP, SigninModal) —
+  // its "Sign up" link switches to the in-flow sign-up form (LeadCaptureModal)
+  // for an applicant who has no account yet.
+  function withSignIn(run) {
+    if (!needsSignIn()) { run(); return; }
+    const then = () => { state.signInDismissed = false; run(); };
+    state.signIn = {
+      then,
+      signup: () => { state.signIn = null; requireVerifiedCustomer(state, bump, then); },
+    };
+    bump();
+  }
   function goNext() {
+    if (needsSignIn()) { withSignIn(goNext); return; }
     const errors = validateStep(step, A, state);
     if (step.type === "review" && !state.confirmed) errors.__confirm = "Please confirm before proceeding";
     if (Object.keys(errors).length) {
@@ -964,7 +988,9 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   function finishSignIn(tokenData) {
     const next = state.signIn?.then;
     const user = tokenData?.user;
-    if (user?.CustomerID) state.customerId = state.customerId || user.CustomerID;
+    // The signed-in account owns the application from here (a resumed
+    // application can carry a stale customerId from an earlier session).
+    if (user?.CustomerID) state.customerId = user.CustomerID;
     state.otpVerified = true;
     state.signIn = null;
     bump();
@@ -972,6 +998,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   }
   function goBack() {
     if (stepIndex === 0) { cancelApplication(); return; }
+    if (needsSignIn()) { withSignIn(goBack); return; }
     errorsRef.current = {};
     state.stepIndex -= 1;
     bump();
@@ -983,6 +1010,7 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
   // guarded against duplicates), so nothing else needs re-running.
   function jumpTo(i) {
     if (i === stepIndex) return;
+    if (needsSignIn()) { withSignIn(() => jumpTo(i)); return; }
     if (i > stepIndex) {
       if (i > reachedIndex) return;
       for (let j = stepIndex; j < i; j++) {
@@ -1023,7 +1051,8 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
         <SigninModal
           initialValue={state.leadContact?.mobile || ""}
           onSuccess={finishSignIn}
-          onClose={() => { state.signIn = null; bump(); }}
+          onClose={() => { state.signIn = null; state.signInDismissed = true; bump(); }}
+          onSignup={state.signIn.signup}
         />
       )}
       <nav className="flex items-center gap-1.5 text-xs text-gray-500 mb-4 flex-wrap">
@@ -1085,8 +1114,8 @@ export default function FlowRunner({ flowId, initialSet, onExit, onComplete, onS
             {step.type === "goToChange" && <GoToChangeBody onExit={onExit} />}
             {step.type === "review" && directMode && <ChangeReviewBody A={A} state={state} current={changeCurrent?.data} errors={errorsRef.current} onConfirm={(v) => { state.confirmed = v; bump(); }} onJump={jumpTo} steps={steps} />}
             {step.type === "review" && !directMode && <ReviewBody flowId={flowId} A={A} state={state} errors={errorsRef.current} onConfirm={(v) => { state.confirmed = v; bump(); }} onJump={jumpTo} />}
-            {step.type === "packages" && <PackagesBody A={A} state={state} bump={bump} onPay={goNext} onCallback={() => doCallback(flow, state, bump)} onBack={goBack} />}
-            {step.type === "payment" && <PaymentBody flow={flow} A={A} state={state} bump={bump} onPay={() => doPay(flow, state, bump)} onCallback={() => doCallback(flow, state, bump)} onBack={goBack} />}
+            {step.type === "packages" && <PackagesBody A={A} state={state} bump={bump} onPay={goNext} onCallback={() => withSignIn(() => doCallback(flow, state, bump))} onBack={goBack} />}
+            {step.type === "payment" && <PaymentBody flow={flow} A={A} state={state} bump={bump} onPay={() => withSignIn(() => doPay(flow, state, bump))} onCallback={() => withSignIn(() => doCallback(flow, state, bump))} onBack={goBack} />}
             {step.type === "owners" && <OwnersBody A={A} state={state} errors={errorsRef.current} bump={bump} />}
             {step.type === "docs" && <DocsBody step={step} A={A} state={state} errors={errorsRef.current} bump={bump} />}
             {step.type === "namecheck" && <NameCheckBody A={A} state={state} errors={errorsRef.current} setAnswer={setAnswer} bump={bump} />}
@@ -1697,6 +1726,9 @@ function LeadCaptureModal({ state, bump }) {
 
   function closeModal() {
     state.leadGate = null;
+    // Closed without signing in — FlowRunner's needsSignIn() asks again on the
+    // next Continue / Back / sidebar move.
+    if (!localStorage.getItem("token")) state.signInDismissed = true;
     bump();
   }
 
