@@ -394,7 +394,7 @@ const Services = ({ embedded = false, initialServiceId = null }) => {
   // embedded only: service whose "Know More" details are shown in place of the list
   const [detailServiceId, setDetailServiceId] = useState(embedded ? initialServiceId : null);
   // Public page only: packages tab (default) or the individual-services list
-  const [view, setView] = useState("packages");
+  const [view, setView] = useState("services");
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
@@ -748,15 +748,6 @@ const Services = ({ embedded = false, initialServiceId = null }) => {
             {/* Package / individual service tabs */}
             <div className="mt-7 inline-flex flex-wrap justify-center gap-3">
               <button
-                onClick={() => setView("packages")}
-                className={`px-5 py-2 rounded-full text-sm font-semibold border transition-all ${view === "packages"
-                  ? "bg-gray-900 border-gray-900 text-white shadow-md"
-                  : "bg-white border-gray-300 text-gray-600 hover:text-gray-900"
-                  }`}
-              >
-                Package
-              </button>
-              <button
                 onClick={() => setView("services")}
                 className={`px-5 py-2 rounded-full text-sm font-semibold border transition-all ${view === "services"
                   ? "bg-[#FFFBEA] border-[#F3C625] text-black shadow-md"
@@ -764,6 +755,15 @@ const Services = ({ embedded = false, initialServiceId = null }) => {
                   }`}
               >
                 Choose individual service
+              </button>
+              <button
+                onClick={() => setView("packages")}
+                className={`px-5 py-2 rounded-full text-sm font-semibold border transition-all ${view === "packages"
+                  ? "bg-gray-900 border-gray-900 text-white shadow-md"
+                  : "bg-white border-gray-300 text-gray-600 hover:text-gray-900"
+                  }`}
+              >
+                Package
               </button>
             </div>
           </div>
