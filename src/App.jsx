@@ -42,6 +42,7 @@ import CustomerFiles from "./pages/CustomerFiles";
 import CompanyDetails from "./pages/CompanyDetails";
 import Invoiceprofile from "./pages/Invoiceprofile";
 import Refunds from "./pages/Refunds";
+import ProfileCommunications from "./pages/ProfileCommunications";
 
 import Services from "./pages/Services";
 import ServiceDetails from "./pages/ServiceDetails";
@@ -202,6 +203,7 @@ function App() {
             <Route path="companydetails" element={<CompanyDetails />} />
             <Route path="invoice" element={<Invoiceprofile />} />
             <Route path="refunds" element={<Refunds />} />
+            <Route path="communications" element={<ProfileCommunications />} />
             <Route path="invoice-preview/:encrypted" element={<InvoicePreview />} />
 
 
