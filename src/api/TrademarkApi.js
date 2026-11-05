@@ -1,4 +1,12 @@
 import { api } from "./axiosInstance";
+import { getLeadAttribution } from "../utils/leadAttribution";
+
+// A tracked search can create the customer's Lead / Deal in the CRM — its
+// ad-click attribution (JSON) sets that record's source.
+const attributionParam = () => {
+  const a = getLeadAttribution();
+  return a ? JSON.stringify(a) : undefined;
+};
 
 // Public proxy to the MarkSimpl trademark search API (server: /api/trademark/search).
 // type: WORD_MARK | PROPRIETOR_NAME | APPLICATION_NUMBER
@@ -15,6 +23,7 @@ export const searchTrademarks = async ({ q, type = "WORD_MARK", classes = [], li
       limit,
       offset,
       track: track ? 1 : undefined,
+      attribution: track ? attributionParam() : undefined,
     },
   });
   return data.usage ? { ...data.data, usage: data.usage } : data.data;
@@ -34,6 +43,7 @@ export const searchTrademarksByImage = async ({ file, q, classes = [], limit = 1
   form.append("limit", limit);
   form.append("offset", offset);
   if (track) form.append("track", 1);
+  if (track && attributionParam()) form.append("attribution", attributionParam());
   const { data } = await api.post("/api/trademark/image-search", form);
   return data.usage ? { ...data.data, usage: data.usage } : data.data;
 };
@@ -116,3 +126,23 @@ export async function runTrademarkSearch(name, tmClass) {
     }))
     .sort((x, y) => SIMILARITY_RANK[x.similarity] - SIMILARITY_RANK[y.similarity]);
 }
+
+// Signed-out visitor on the Trademark Search page: their contact details in
+// place of sign-up, and the search on screen (params as the page keeps them:
+// { q, type, tmClass, file? }) — the server saves it for the customer with this
+// mobile and sends the report link to it on WhatsApp (server: POST
+// /api/trademark/whatsapp-report). Resolves { whatsappSent, message }.
+export const sendTrademarkReportToWhatsApp = async ({ name, mobile, state, params, limit = 10 }) => {
+  const form = new FormData();
+  form.append("name", name);
+  form.append("mobile", mobile);
+  form.append("state", state);
+  if (params.file) form.append("image", params.file);
+  // A logo-only search is identified by its image; its q is just "Logo: <file>".
+  if (params.type !== "IMAGE") form.append("q", params.q);
+  if (!params.file) form.append("type", params.type);
+  if (params.tmClass) form.append("classes", params.tmClass);
+  form.append("limit", limit);
+  const { data } = await api.post("/api/trademark/whatsapp-report", form);
+  return data;
+};
