@@ -408,6 +408,37 @@ export default function TrademarkSearch({ embedded = false }) {
     runSearch({ q, type, tmClass }, 0);
   };
 
+  // Arriving from the /trademark-search landing page while signed in
+  // (?type=&q=&class=): set the tab/class, fill the box and run that search once.
+  // A logo search can't carry its file in a link, so it just opens the Logo tab.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current) return;
+    autoRan.current = true;
+    const sp = new URLSearchParams(window.location.search);
+    const t = SEARCH_TYPES.some((s) => s.value === sp.get("type")) ? sp.get("type") : "WORD_MARK";
+    const n = Number(sp.get("class"));
+    const cls = Number.isInteger(n) && n >= 1 && n <= 45 ? n : "";
+    if (!sp.get("type") && !sp.get("q")) return;
+    setType(t);
+    setTmClass(cls);
+    const q = (sp.get("q") || "").trim().slice(0, 100);
+    if (t === "IMAGE" || q.length < 2) return;
+    setQuery(q);
+    // Only auto-run when our own /trademark-search page sent the visitor here
+    // (it sets this one-time, same-tab flag) — a link from anywhere else just
+    // prefills, so it can't spend the customer's free searches.
+    let fromLanding = false;
+    try {
+      fromLanding = sessionStorage.getItem("tm_autorun") === q;
+      sessionStorage.removeItem("tm_autorun");
+    } catch {
+      fromLanding = false;
+    }
+    if (fromLanding) runSearch({ q, type: t, tmClass: cls }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleDownload = async () => {
     if (!reportRef.current) return;
     setDownloading(true);
