@@ -1,6 +1,22 @@
 {
+  "routes": [
+    {
+      "route": "/trademark-registration/apply",
+      "rewrite": "/trademark-registration/apply/index.html"
+    },
+    {
+      "route": "/trademark-registration",
+      "rewrite": "/trademark-registration/index.html"
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/images/*", "/css/*", "/js/*"]
+    "exclude": [
+      "/assets/*",
+      "/images/*",
+      "/css/*",
+      "/js/*",
+      "/trademark-registration/*"
+    ]
   }
 }
