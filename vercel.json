@@ -1,6 +1,31 @@
 {
   "redirects": [
     {
+      "source": "/trademark-classes/",
+      "destination": "/trademark-classes",
+      "permanent": true
+    },
+    {
+      "source": "/trademark-classes/index.html",
+      "destination": "/trademark-classes",
+      "permanent": true
+    },
+    {
+      "source": "/trademark-search/",
+      "destination": "/trademark-search",
+      "permanent": true
+    },
+    {
+      "source": "/trademark-search/meta/",
+      "destination": "/trademark-search/meta",
+      "permanent": true
+    },
+    {
+      "source": "/trademark-search/meta/index.html",
+      "destination": "/trademark-search/meta",
+      "permanent": true
+    },
+    {
       "source": "/trademark-registration/",
       "destination": "/trademark-registration",
       "permanent": true
@@ -19,9 +44,57 @@
       "source": "/trademark-registration/apply/index.html",
       "destination": "/trademark-registration/apply",
       "permanent": true
+    },
+    {
+      "source": "/private-limited-company-registration/apply/",
+      "destination": "/private-limited-company-registration/apply",
+      "permanent": true
+    },
+    {
+      "source": "/private-limited-company-registration/apply/index.html",
+      "destination": "/private-limited-company-registration/apply",
+      "permanent": true
+    },
+    {
+      "source": "/private-limited-company-registration/",
+      "destination": "/private-limited-company-registration",
+      "permanent": true
+    },
+    {
+      "source": "/private-limited-company-registration/index.html",
+      "destination": "/private-limited-company-registration",
+      "permanent": true
+    },
+    {
+      "source": "/gst-registration/apply/",
+      "destination": "/gst-registration/apply",
+      "permanent": true
+    },
+    {
+      "source": "/gst-registration/apply/index.html",
+      "destination": "/gst-registration/apply",
+      "permanent": true
+    },
+    {
+      "source": "/gst-registration/",
+      "destination": "/gst-registration",
+      "permanent": true
+    },
+    {
+      "source": "/gst-registration/index.html",
+      "destination": "/gst-registration",
+      "permanent": true
     }
   ],
   "rewrites": [
+    {
+      "source": "/trademark-classes",
+      "destination": "/trademark-classes/index.html"
+    },
+    {
+      "source": "/trademark-search/meta",
+      "destination": "/trademark-search/meta/index.html"
+    },
     {
       "source": "/trademark-registration",
       "destination": "/trademark-registration/index.html"
@@ -29,6 +102,22 @@
     {
       "source": "/trademark-registration/apply",
       "destination": "/trademark-registration/apply/index.html"
+    },
+    {
+      "source": "/private-limited-company-registration/apply",
+      "destination": "/private-limited-company-registration/apply/index.html"
+    },
+    {
+      "source": "/private-limited-company-registration",
+      "destination": "/private-limited-company-registration/index.html"
+    },
+    {
+      "source": "/gst-registration/apply",
+      "destination": "/gst-registration/apply/index.html"
+    },
+    {
+      "source": "/gst-registration",
+      "destination": "/gst-registration/index.html"
     },
     {
       "source": "/(.*)",
